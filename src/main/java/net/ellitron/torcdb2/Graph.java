@@ -57,8 +57,8 @@ public class Graph {
     else
       this.graphName = "default";
 
-    if (config.containsKey("coordLocator"))
-      this.coordLocator = config.get("coordLocator");
+    if (config.containsKey("coordinatorLocator"))
+      this.coordLocator = config.get("coordinatorLocator");
     else
       this.coordLocator = "tcp:host=127.0.0.1,port=12247";
 
