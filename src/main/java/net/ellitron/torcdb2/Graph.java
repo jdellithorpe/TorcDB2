@@ -156,7 +156,7 @@ public class Graph {
 
   /* **************************************************************************
    *
-   * Traversal
+   * Graph Traversal and Reading Operations.
    *
    * *************************************************************************/
 
@@ -406,6 +406,79 @@ public class Graph {
           v.setProperties(properties);
         }
       }
+    }
+  }
+
+  /* **************************************************************************
+   *
+   * Graph Update Operations.
+   *
+   * *************************************************************************/
+
+  /**
+   * Write a vertex into the graph, updating the vertex if it exists, and creating the vertex if it
+   * does not exist in the graph.
+   *
+   * @param v Vertex to write (create or update).
+   */
+  public void writeVertex(Vertex v) {
+    if (v.getProperties() == null)
+      v.setProperties(new HashMap<>(0));
+
+    byte[] labelByteArray = GraphHelper.serializeObject(v.label());
+    byte[] serializedProps = GraphHelper.serializeObject(v.getProperties());
+    byte[] labelKeyByteArray = GraphHelper.getVertexLabelKey(v.id());
+    byte[] propKeyByteArray = GraphHelper.getVertexPropertiesKey(v.id());
+
+    if (tx != null) {
+      tx.write(vertexTableId, labelKeyByteArray, labelByteArray);
+      tx.write(vertexTableId, propKeyByteArray, serializedProps);
+    } else {
+      client.write(vertexTableId, labelKeyByteArray, labelByteArray, null);
+      client.write(vertexTableId, propKeyByteArray, serializedProps, null);
+    }
+  }
+
+  /**
+   * Add an edge in the graph from the source vertex to the destination vertex.
+   *
+   * Notes: 
+   *   - Multiple edges of the same label between the same vertices is allowed.
+   *   - Vertex labels must be set, as they are used to index edge lists.
+   *
+   * @param src Source vertex.
+   * @param dst Destination vertex.
+   * @param props Properties for the edge.
+   */
+  public void addEdge(Vertex src, Vertex dst, String edgeLabel, Map<Object, Object> props) {
+    if (props == null)
+      props = new HashMap<>(0);
+
+    byte[] serializedProps = GraphHelper.serializeObject(props);
+
+    /* Add one vertex to the other's edge list, and vice versa, choosing one as the base and the
+     * other as the neighbor. */
+    for (int i = 0; i < 2; ++i) {
+      Vertex baseVertex;
+      Vertex neighborVertex;
+      Direction direction;
+      if (i == 0) {
+        baseVertex = src;
+        neighborVertex = dst;
+        direction = Direction.OUT;
+      } else {
+        baseVertex = dst;
+        neighborVertex = src;
+        direction = Direction.IN;
+      }
+
+      byte[] keyPrefix = GraphHelper.getEdgeListKeyPrefix(baseVertex.id(), edgeLabel, direction,
+              neighborVertex.label());
+
+      if (tx != null)
+        EdgeList.prepend(tx, edgeListTableId, keyPrefix, neighborVertex.id(), serializedProps);
+      else
+        EdgeList.prepend(client, edgeListTableId, keyPrefix, neighborVertex.id(), serializedProps);
     }
   }
 }
