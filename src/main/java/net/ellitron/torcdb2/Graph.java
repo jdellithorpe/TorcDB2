@@ -421,7 +421,7 @@ public class Graph {
    *
    * @param v Vertex to write (create or update).
    */
-  public void writeVertex(Vertex v) {
+  public void addVertex(Vertex v) {
     if (v.getProperties() == null)
       v.setProperties(new HashMap<>(0));
 
