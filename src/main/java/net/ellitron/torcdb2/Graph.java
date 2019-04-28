@@ -416,10 +416,10 @@ public class Graph {
    * *************************************************************************/
 
   /**
-   * Write a vertex into the graph, updating the vertex if it exists, and creating the vertex if it
+   * Add a vertex into the graph, updating the vertex if it exists, and creating the vertex if it
    * does not exist in the graph.
    *
-   * @param v Vertex to write (create or update).
+   * @param v Vertex to add (create or update).
    */
   public void addVertex(Vertex v) {
     if (v.getProperties() == null)
