@@ -447,10 +447,11 @@ public class Graph {
    *   - Vertex labels must be set, as they are used to index edge lists.
    *
    * @param src Source vertex.
+   * @param edgeLabel Label for the edge.
    * @param dst Destination vertex.
    * @param props Properties for the edge.
    */
-  public void addEdge(Vertex src, Vertex dst, String edgeLabel, Map<Object, Object> props) {
+  public void addEdge(Vertex src, String edgeLabel, Vertex dst, Map<Object, Object> props) {
     if (props == null)
       props = new HashMap<>(0);
 
