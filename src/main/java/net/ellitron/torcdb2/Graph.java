@@ -280,68 +280,65 @@ public class Graph {
   }
 
   /**
-   * Read in the properties of all the given vertices.
+   * Read in the properties of all the given vertices. If specific keys are specified, may perform
+   * space saving optimizations to store only that key or keys.
+   *
+   * @param keys (Optional) set of keys to fetch.
    */
   public void fillProperties(Iterable<Vertex> vertices, String ... keys) {
     // Max number of reads to issue in a multiread / batch
     int DEFAULT_MAX_MULTIREAD_SIZE = 1 << 11; 
 
-    if (tx != null) {
-//      RAMCloudTransaction rctx = torcGraphTx.getThreadLocalRAMCloudTx();
-//
-//      // Keeps track of where we are in the vList.
-//      int vListMarker = 0;
-//
-//      while (vListMarker < vList.size()) {
-//        // Queue up a batchSize of asynchronous ReadOps.
-//        int batchSize = Math.min(vList.size() - vListMarker, 
-//            DEFAULT_MAX_MULTIREAD_SIZE);
-//
-//        RAMCloudTransactionReadOp[] readOps = 
-//          new RAMCloudTransactionReadOp[batchSize];
-//        for (int i = 0; i < batchSize; i++) {
-//          readOps[i] = new RAMCloudTransactionReadOp(rctx, vertexTableId,
-//              GraphHelper.getVertexPropertiesKey(vList.get(vListMarker + i).id()), 
-//              true);
-//        }
-//
-//        for (int i = 0; i < batchSize; i++) {
-//          Vertex v = vList.get(vListMarker + i);
-//
-//          RAMCloudObject obj;
-//          try {
-//            obj = readOps[i].getValue();
-//            if (obj == null) {
-//              // This vertex has no properties set.
-//              v.setProperties(new HashMap<>());
-//              continue;
-//            }
-//          } catch (ClientException e) {
-//            throw new RuntimeException(e);
-//          } finally {
-//            readOps[i].close();
-//          }
-//
-//          Map<Object, Object> properties = 
-//            (Map<Object, Object>)GraphHelper.deserializeObject(obj.getValueBytes());
-//          v.setProperties(properties);
-//        }
-//
-//        vListMarker += batchSize;
-//      }
-    } else {
-      Iterator<Vertex> it = vertices.iterator();
-      LinkedList<MultiReadObject> requestQ = new LinkedList<>();
-      LinkedList<Vertex> vertexQ = new LinkedList<>();
-      while (it.hasNext()) {
-        Vertex v = it.next();
+    Iterator<Vertex> it = vertices.iterator();
+    LinkedList<Object> requestQ = new LinkedList<>();
+    LinkedList<Vertex> vertexQ = new LinkedList<>();
+    while (it.hasNext()) {
+      Vertex v = it.next();
+      if (tx != null) {
+        requestQ.addLast(new RAMCloudTransactionReadOp(tx, vertexTableId, 
+              GraphHelper.getVertexPropertiesKey(v.id()), true));
+      } else {
         requestQ.addLast(new MultiReadObject(vertexTableId, 
               GraphHelper.getVertexPropertiesKey(v.id())));
-        vertexQ.addLast(v);
-        if (requestQ.size() == DEFAULT_MAX_MULTIREAD_SIZE) {
+      }
+
+      vertexQ.addLast(v);
+
+      // If we've reached the multiread size limit or we're at the end, then issue the reads.
+      if (requestQ.size() == DEFAULT_MAX_MULTIREAD_SIZE || !it.hasNext()) {
+        if (tx != null) {
+          while(requestQ.size() > 0) {
+            RAMCloudTransactionReadOp readOp = (RAMCloudTransactionReadOp)requestQ.removeFirst();
+            v = vertexQ.removeFirst();
+
+            RAMCloudObject obj;
+            try {
+              obj = readOp.getValue();
+              if (obj == null) {
+                // This vertex has no properties set.
+                v.setProperties(new HashMap<>());
+                continue;
+              }
+            } catch (ClientException e) {
+              throw new RuntimeException(e);
+            } finally {
+              readOp.close();
+            }
+
+            Map<Object, Object> properties = (Map<Object, Object>)
+              GraphHelper.deserializeObject(obj.getValueBytes());
+            if (keys.length == 1) {
+              Map<Object, Object> minimap = new ArrayMap<>(1);
+              minimap.put(keys[0], properties.get(keys[0]));
+              properties = minimap;
+            }
+
+            v.setProperties(properties);
+          }
+        } else {
           MultiReadObject[] requests = new MultiReadObject[requestQ.size()];
           for (int i = 0; i < requests.length; i++) {
-            requests[i] = requestQ.removeFirst();
+            requests[i] = (MultiReadObject)requestQ.removeFirst();
           }
 
           client.read(requests);
@@ -352,10 +349,10 @@ public class Graph {
             if (requests[i].getStatus() != Status.STATUS_OK) {
               if (requests[i].getStatus() == Status.STATUS_OBJECT_DOESNT_EXIST) {
                 // This vertex has no properties set.
+                v.setProperties(new HashMap<>());
                 continue;
               } else {
-                throw new RuntimeException(
-                    "Vertex properties RAMCloud object had status " + 
+                throw new RuntimeException("Vertex properties RAMCloud object had status " + 
                     requests[i].getStatus());
               }
             }
@@ -370,42 +367,8 @@ public class Graph {
 
             v.setProperties(properties);
           } 
-        } 
-      }
-
-      if (requestQ.size() > 0) {
-        MultiReadObject[] requests = new MultiReadObject[requestQ.size()];
-        for (int i = 0; i < requests.length; i++) {
-          requests[i] = requestQ.removeFirst();
         }
-
-        client.read(requests);
-      
-        for (int i = 0; i < requests.length; i++) {
-          Vertex v = vertexQ.removeFirst();
-
-          if (requests[i].getStatus() != Status.STATUS_OK) {
-            if (requests[i].getStatus() == Status.STATUS_OBJECT_DOESNT_EXIST) {
-              // This vertex has no properties set.
-              continue;
-            } else {
-              throw new RuntimeException(
-                  "Vertex properties RAMCloud object had status " + 
-                  requests[i].getStatus());
-            }
-          }
-
-          Map<Object, Object> properties = (Map<Object, Object>)
-            GraphHelper.deserializeObject(requests[i].getValueBytes());
-          if (keys.length == 1) {
-            Map<Object, Object> minimap = new ArrayMap<>(1);
-            minimap.put(keys[0], properties.get(keys[0]));
-            properties = minimap;
-          }
-
-          v.setProperties(properties);
-        }
-      }
+      } 
     }
   }
 
