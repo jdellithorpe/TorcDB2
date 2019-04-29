@@ -31,10 +31,6 @@ public class Vertex {
   private String label;
   private Map<Object, Object> props = null;
 
-  public Vertex(final UInt128 id) {
-    this(id, null, null);
-  }
-
   public Vertex(final UInt128 id, final String label) {
     this(id, label, null);
   }
