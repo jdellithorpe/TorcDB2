@@ -259,9 +259,10 @@ public class Graph {
     return new TraversalResult(nbrListMap, ePropListMap, uniqNbrSet);
   }
 
-  public void fillProperties(Vertex ... v) {
-    List<Vertex> vList = new List<>(v.length);
-    vList.addAll(v);
+  public void fillProperties(Vertex ... vertices) {
+    List<Vertex> vList = new ArrayList<>(vertices.length);
+    for (Vertex v : vertices)
+      vList.add(v);
     fillProperties(vList);
   }
 
