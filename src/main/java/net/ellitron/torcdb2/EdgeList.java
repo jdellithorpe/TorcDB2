@@ -719,9 +719,11 @@ public class EdgeList {
 
       int numTailSegments = headSeg.getInt();
 
+      if (headSeg.hasRemaining() || numTailSegments > 0)
+        eListMap.put(kp, new LinkedList<>());
+
       if (headSeg.hasRemaining()) {
-        List<SerializedEdge> eList = new LinkedList<>();
-        eListMap.put(kp, eList);
+        List<SerializedEdge> eList = eListMap.get(kp);
 
         while (headSeg.hasRemaining()) {
           byte[] neighborIdBytes = new byte[UInt128.BYTES];
