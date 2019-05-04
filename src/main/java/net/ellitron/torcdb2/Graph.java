@@ -17,6 +17,15 @@ import edu.stanford.ramcloud.*;
 import edu.stanford.ramcloud.ClientException.*;
 import edu.stanford.ramcloud.multiop.*;
 
+import java.io.BufferedOutputStream;
+import java.io.FileOutputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.OutputStream;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Collection;
@@ -38,9 +47,10 @@ public class Graph {
   private final int numServers;
 
   /* Internal state. */
-  private final RAMCloud client;
-  private RAMCloudTransaction tx;
-  private final long vertexTableId, edgeListTableId;
+  private final RAMCloud client;                        // RAMCloud client interface.
+  private RAMCloudTransaction tx;                       // Current RAMCloud tx context.
+  private final long vertexTableId, edgeListTableId;    // RAMCloud tableIds.
+  private OutputStream vertexTableOS, edgeListTableOS;  // For writing RAMCloud image files.
 
   /* **************************************************************************
    *
@@ -72,10 +82,30 @@ public class Graph {
     else
       this.numServers = 1;
 
-    this.client = new RAMCloud(coordLocator, "main", dpdkPort);
-    this.tx = null;
-    this.vertexTableId = client.createTable(graphName + "_vertexTable", numServers);
-    this.edgeListTableId = client.createTable(graphName + "_edgeListTable", numServers);
+    // Configure database for RAMCloud image file generation.
+    if (config.containsKey("ramcloudImageGenerationOutputDir")) {
+      String rcImageDir = config.get("ramcloudImageGenerationOutputDir");
+
+      try {
+        vertexTableOS = new BufferedOutputStream(new FileOutputStream(
+              rcImageDir + "/" + graphName + "_vertexTable.img"));
+
+        edgeListTableOS = new BufferedOutputStream(new FileOutputStream(
+              rcImageDir + "/" + graphName + "_edgeListTable.img"));
+      } catch (FileNotFoundException e) {
+        throw new RuntimeException(e);
+      }
+
+      this.client = null;
+      this.tx = null;
+      this.vertexTableId = -1;
+      this.edgeListTableId = -1;
+    } else {
+      this.client = new RAMCloud(coordLocator, "main", dpdkPort);
+      this.tx = null;
+      this.vertexTableId = client.createTable(graphName + "_vertexTable", numServers);
+      this.edgeListTableId = client.createTable(graphName + "_edgeListTable", numServers);
+    }
   }
 
   /**
@@ -447,5 +477,65 @@ public class Graph {
       else
         EdgeList.prepend(client, edgeListTableId, keyPrefix, neighborVertex.id(), serializedProps);
     }
+  }
+
+  /* **************************************************************************
+   *
+   * RAMCloud Image Generation Methods
+   *
+   * *************************************************************************/
+
+  /**
+   * Writes a vertex to the vertex table RAMCloud image file.
+   * 
+   * @param v Vertex to write to RAMCloud image file.
+   */
+  public void loadVertex(final Vertex v) {
+    byte[] key = GraphHelper.getVertexPropertiesKey(v.id());
+    byte[] value = GraphHelper.serializeObject(v.getProperties());
+
+    ByteBuffer buffer = ByteBuffer.allocate(
+        Integer.BYTES +
+        key.length +
+        Integer.BYTES +
+        value.length)
+        .order(ByteOrder.LITTLE_ENDIAN);
+
+    buffer.putInt(key.length);
+    buffer.put(key);
+    buffer.putInt(value.length);
+    buffer.put(value);
+
+    try {
+      vertexTableOS.write(buffer.array());
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  /**
+   * Writes edge lists to the edge list table RAMCloud image file.
+   *
+   * @param baseVertexId ID of the vertex that owns this edge list.
+   * @param edgeLabel Edge label for the edges in this list.
+   * @param direction Direction of the edges in this list relative to base.
+   * @param neighborIds IDs of the neighbors in the edge list.
+   * @param propMaps Properties on edges in the list (null values not allowed).
+   */
+  public void loadEdges(
+      final UInt128 baseVertexId, 
+      final String edgeLabel,
+      final Direction direction, 
+      final String neighborLabel, 
+      final List<UInt128> neighborIds, 
+      final List<Map<Object, Object>> propMaps) {
+    byte[] keyPrefix = GraphHelper.getEdgeListKeyPrefix(baseVertexId, edgeLabel, direction,
+            neighborLabel);
+
+    List<byte[]> serializedPropList = new ArrayList<>(propMaps.size());
+    for (int i = 0; i < propMaps.size(); i++)
+      serializedPropList.add(GraphHelper.serializeObject(propMaps.get(i)));
+
+    EdgeList.writeListToFile(edgeListTableOS, keyPrefix, neighborIds, serializedPropList);
   }
 }

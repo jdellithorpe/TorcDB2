@@ -91,28 +91,25 @@ import java.util.*;
 public class EdgeList {
 
   /*
-   * Limit placed on the number of bytes allowed to be stored in a single
-   * RAMCloud object. For large edge lists, if this limit is too high then
-   * simple operations like prepend will need to read a lot of data only to add
-   * a relatively small number of bytes to the list. If this limit is too
-   * small, then operations like reading all of the edges in the list will
-   * require reading many RAMCloud objects and incur high read overhead.
+   * Limit placed on the number of bytes allowed to be stored in a single RAMCloud object. For
+   * large edge lists, if this limit is too high then simple operations like prepend will need to
+   * read a lot of data only to add a relatively small number of bytes to the list. If this limit
+   * is too small, then operations like reading all of the edges in the list will require reading
+   * many RAMCloud objects and incur high read overhead.
    */
   private static final int DEFAULT_SEGMENT_SIZE_LIMIT = 1 << 10;
 
   /*
-   * When a RAMCloud object exceeds its size limit (DEFAULT_SEGMENT_SIZE_LIMIT), the
-   * object is split into two parts. This parameter specifies the byte offset
-   * into the segment where the split should occur. Most of the time this will
-   * not land exactly between two edges in the list, and in this case the
-   * nearest boundary to the split point is selected, unless that happens to be
-   * past the size limit, in which case the lower boundary is selected.
+   * When a RAMCloud object exceeds its size limit (DEFAULT_SEGMENT_SIZE_LIMIT), the object is
+   * split into two parts. This parameter specifies the byte offset into the segment where the
+   * split should occur. Most of the time this will not land exactly between two edges in the list,
+   * and in this case the nearest boundary to the split point is selected, unless that happens to
+   * be past the size limit, in which case the lower boundary is selected.
    */
   private static final int DEFAULT_SEGMENT_TARGET_SPLIT_POINT = 0;
 
   /*
-   * Limit placed on the number of asynchronous reads that can be outstanding at
-   * any one time.
+   * Limit placed on the number of asynchronous reads that can be outstanding at any one time.
    */
   private static final int DEFAULT_MAX_ASYNC_READS = 1 << 7;
 
@@ -455,72 +452,64 @@ public class EdgeList {
   }
 
   /**
-   * This method takes an array of edges and creates the same set of RAMCloud
-   * key / value pairs that would be created had the edges been added one by
-   * one, starting with the first edge in the array and ending with the last
-   * edge in the array, and writes the resulting key/value pairs into the given
-   * RAMCloud image file. The resulting key / value pairs written into the
-   * image should exactly match the key / value pairs that would be in RAMCloud
-   * had the EdgeList.prepend() method been called for each of the edges,
-   * starting with the first in the array and ending with the last in the array.
+   * This method takes an array of edges and creates the same set of RAMCloud key / value pairs
+   * that would be created had the edges been added one by one, starting with the first edge in the
+   * array and ending with the last edge in the array, and writes the resulting key/value pairs
+   * into the given RAMCloud image file. The resulting key / value pairs written into the image
+   * should exactly match the key / value pairs that would be in RAMCloud had the
+   * EdgeList.prepend() method been called for each of the edges, starting with the first in the
+   * array and ending with the last in the array.
    *
    * @param edgeListTableOS The image file to write to.
    * @param keyPrefix Key prefix for the edge list.
-   * @param neighborIds Remote vertex Ids for this edge list. List is in the
-   * order these edges would have been added in (0th edge is the first edge
-   * added).
-   * @param propMaps Property maps for the edges. Same ordering as neighborIds.
-   * Can be an empty list, which signals that these edges do not have
-   * properties.
+   * @param neighborIds Remote vertex Ids for this edge list. List is in the order these edges
+   * would have been added in (0th edge is the first edge added).
+   * @param propMaps Property maps for the edges. Same ordering as neighborIds. Can be an empty
+   * list, which signals that these edges do not have properties.
    */
   public static void writeListToFile(
       OutputStream edgeListTableOS,
       byte[] keyPrefix,
       List<UInt128> neighborIds, 
       List<byte[]> serializedPropList) {
-    /* General strategy here is to simulate the prepending of edges by
-     * prepending edge lengths instead of actual edges and split by the sum of
-     * the edge lengths in the list, and thus calculate how many edges should go
-     * in each segment had they been prepended one by one in that order. Using
-     * this information, we can then take the list of edges and directly pack
-     * the correct number into the correct segments. 
+    /* General strategy here is to simulate the prepending of edges by prepending edge lengths
+     * instead of actual edges and split by the sum of the edge lengths in the list, and thus
+     * calculate how many edges should go in each segment had they been prepended one by one in
+     * that order. Using this information, we can then take the list of edges and directly pack the
+     * correct number into the correct segments. 
      */
 
-    // We only need to keep track of the series of edge lengths in the head
-    // segment, because once a tail segment is "pinched" off after a split of
-    // the head segment, it will remain unchanged, and the only information we
-    // need to keep around is the number of edges that made it into the segment.
+    // We only need to keep track of the series of edge lengths in the head segment, because once a
+    // tail segment is "pinched" off after a split of the head segment, it will remain unchanged,
+    // and the only information we need to keep around is the number of edges that made it into the
+    // segment.
     LinkedList<Integer> headSegEdgeLengths = new LinkedList<>();
     
-    // As we split off tail segments from the head, we record the number of
-    // edges that made it into the resulting tail segment in this list. Elements
-    // are added to the end of this list as the simulation proceeds, therefore
-    // the first element of the list represents the number of edges in the last
-    // segment of the edge list, and the last element represents the number of
-    // edges in the head segment.
+    // As we split off tail segments from the head, we record the number of edges that made it into
+    // the resulting tail segment in this list. Elements are added to the end of this list as the
+    // simulation proceeds, therefore the first element of the list represents the number of edges
+    // in the last segment of the edge list, and the last element represents the number of edges in
+    // the head segment.
     ArrayList<Integer> edgesPerSegment = new ArrayList<>();
     
-    // Here we record the sizes, in bytes, of segments created during the
-    // simulation (in the same ordering as the edgesPerSegment list). These data
-    // are used after the simulation to allocate appropriately sized ByteBuffers
-    // that represent the edge list segments. Although these data could be
-    // derived from edgesPerSegment and the argument list of edges
-    // post-simulation, this information is calculated already during the
-    // simulation and so it is more efficient to simply save it for later use.
+    // Here we record the sizes, in bytes, of segments created during the simulation (in the same
+    // ordering as the edgesPerSegment list). These data are used after the simulation to allocate
+    // appropriately sized ByteBuffers that represent the edge list segments. Although these data
+    // could be derived from edgesPerSegment and the argument list of edges post-simulation, this
+    // information is calculated already during the simulation and so it is more efficient to
+    // simply save it for later use.
     ArrayList<Integer> segmentSizes = new ArrayList<>();
    
-    // Head segment starts with an integer field containing the total number of
-    // tail segments for this edge list, so this is our starting length for the
-    // head segment.
+    // Head segment starts with an integer field containing the total number of tail segments for
+    // this edge list, so this is our starting length for the head segment.
     int headSegLen = Integer.BYTES;
 
-    // Simulate prepending the edges, starting with the first in the argument
-    // list and ending with the last in the argument list.
+    // Simulate prepending the edges, starting with the first in the argument list and ending with
+    // the last in the argument list.
     for (int i = 0; i < neighborIds.size(); i++) {
       int edgeLength;
       if (serializedPropList.size() > 0) {
-        edgeLength = UInt128.BYTES + Short.BYTES + 
-            serializedPropList.get(i).length;
+        edgeLength = UInt128.BYTES + Short.BYTES + serializedPropList.get(i).length;
       } else {
         edgeLength = UInt128.BYTES + Short.BYTES;
       }
@@ -539,8 +528,7 @@ public class EdgeList {
 
           if (nextEdgeStartPos >= DEFAULT_SEGMENT_TARGET_SPLIT_POINT) {
             /*
-             * The current edge either stradles the split point, or is right up
-             * against it.
+             * The current edge either stradles the split point, or is right up against it.
              *
              *                                       nextEdgeStartPos
              *            <--left-->          <--right-->   V
@@ -552,14 +540,12 @@ public class EdgeList {
             int right = nextEdgeStartPos - DEFAULT_SEGMENT_TARGET_SPLIT_POINT;
 
             if (right < left) {
-              /* Target split point is closer to the start of the next edge in
-               * the list than the start of this edge. In this case we
-               * generally want to split at the start of the next edge, except
-               * for a special case handled here. */
+              /* Target split point is closer to the start of the next edge in the list than the
+               * start of this edge. In this case we generally want to split at the start of the
+               * next edge, except for a special case handled here. */
               if (nextEdgeStartPos > DEFAULT_SEGMENT_SIZE_LIMIT) {
-                /* Special case, the current edge extends beyond the size limit.
-                 * To still enforce the size limit policy we choose not to keep
-                 * this edge in the head segment. */
+                /* Special case, the current edge extends beyond the size limit.  To still enforce
+                 * the size limit policy we choose not to keep this edge in the head segment. */
                 edgesInNewTailSeg = headSegEdgeLengths.size() - j;
                 break;
               } else {
@@ -567,18 +553,17 @@ public class EdgeList {
                 break;
               }
             } else {
-              /* Target split point is closer to the start of this edge than the
-               * next. In this case we choose to make this edge part of the
-               * newly created segment. */
+              /* Target split point is closer to the start of this edge than the next. In this case
+               * we choose to make this edge part of the newly created segment. */
               edgesInNewTailSeg = headSegEdgeLengths.size() - j;
               break;
             }
           }
         }
 
-        // At this point we have figured out how many edges go in the new tail
-        // segment (which could potentially be zero, which means the edge is
-        // actually NOT split. In this case just move on).
+        // At this point we have figured out how many edges go in the new tail segment (which could
+        // potentially be zero, which means the edge is actually NOT split. In this case just move
+        // on).
         
         if (edgesInNewTailSeg > 0) {
           edgesPerSegment.add(edgesInNewTailSeg);
@@ -595,25 +580,22 @@ public class EdgeList {
       } // if (headSegLen >= DEFAULT_SEGMENT_SIZE_LIMIT) 
     } // for (int i = 0; i < neighborIds.size(); i++) 
 
-    // Whatever is left in headSegEdgeLengths after the simulation is over
-    // represents the final state of the head segment.
+    // Whatever is left in headSegEdgeLengths after the simulation is over represents the final
+    // state of the head segment.
     edgesPerSegment.add(headSegEdgeLengths.size());
     segmentSizes.add(headSegLen);
   
-    // Now edgesPerSegment and segmentSizes contain the metadata for all the
-    // segments that represent this edge list in RAMCloud. Time to pack the
-    // edges into ByteBuffers and write them out to the edge image file.
+    // Now edgesPerSegment and segmentSizes contain the metadata for all the segments that
+    // represent this edge list in RAMCloud. Time to pack the edges into ByteBuffers and write them
+    // out to the edge image file.
 
     int neighborListSegOffset = 0;
-    ByteBuffer keyLen = ByteBuffer.allocate(Integer.BYTES)
-        .order(ByteOrder.LITTLE_ENDIAN);
-    ByteBuffer valLen = ByteBuffer.allocate(Integer.BYTES)
-        .order(ByteOrder.LITTLE_ENDIAN);
+    ByteBuffer keyLen = ByteBuffer.allocate(Integer.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+    ByteBuffer valLen = ByteBuffer.allocate(Integer.BYTES).order(ByteOrder.LITTLE_ENDIAN);
     for (int i = 0; i < edgesPerSegment.size(); i++) {
       int edgesInSegment = edgesPerSegment.get(i);
       int segmentSize = segmentSizes.get(i);
-      ByteBuffer segment = ByteBuffer.allocate(segmentSize)
-          .order(ByteOrder.LITTLE_ENDIAN);
+      ByteBuffer segment = ByteBuffer.allocate(segmentSize).order(ByteOrder.LITTLE_ENDIAN);
       
       byte[] segKey;
       if (i == edgesPerSegment.size() - 1) {
@@ -626,14 +608,12 @@ public class EdgeList {
         segKey = getSegmentKey(keyPrefix, i + 1);
       }
 
-      // Remember that the given edges were prepended, so a given segment
-      // actually starts with the edges in the end of the range and finishes
-      // with the first edge in the range.
+      // Remember that the given edges were prepended, so a given segment actually starts with the
+      // edges in the end of the range and finishes with the first edge in the range.
       for (int j = edgesInSegment - 1; j >= 0; j--) {
         UInt128 neighborId = neighborIds.get(neighborListSegOffset + j);
         if (serializedPropList.size() > 0) {
-          byte[] serializedProps = 
-              serializedPropList.get(neighborListSegOffset + j);
+          byte[] serializedProps = serializedPropList.get(neighborListSegOffset + j);
           segment.put(neighborId.toByteArray());
           segment.putShort((short) serializedProps.length);
           segment.put(serializedProps);
