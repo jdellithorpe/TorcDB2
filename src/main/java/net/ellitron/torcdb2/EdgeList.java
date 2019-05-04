@@ -124,7 +124,7 @@ public class EdgeList {
       byte[] keyPrefix,
       UInt128 neighborId, 
       byte[] serializedProperties) {
-    return prepend(rctx, rcTableId, keyPrefix, neighborId, serializedProperties,
+    return prepend(rctx, null, rcTableId, keyPrefix, neighborId, serializedProperties,
         DEFAULT_SEGMENT_SIZE_LIMIT, DEFAULT_SEGMENT_TARGET_SPLIT_POINT);
   }
 
@@ -134,20 +134,23 @@ public class EdgeList {
       byte[] keyPrefix,
       UInt128 neighborId, 
       byte[] serializedProperties) {
-    return prepend(client, rcTableId, keyPrefix, neighborId, serializedProperties,
+    return prepend(null, client, rcTableId, keyPrefix, neighborId, serializedProperties,
         DEFAULT_SEGMENT_SIZE_LIMIT, DEFAULT_SEGMENT_TARGET_SPLIT_POINT);
   }
 
   /**
-   * Prepends the edge represented by the given neighbor vertex and serialized
-   * properties to this edge list. If the edge list does not exist, then this
-   * method will create a new one and return true to indicate that a new edge
-   * list has been created (otherwise the method returns false).
+   * Prepends the edge represented by the given neighbor vertex and serialized properties to this
+   * edge list. If the edge list does not exist, then this method will create a new one and return
+   * true to indicate that a new edge list has been created (otherwise the method returns false).
    *
-   * Note that this method allows multiple edges with the same neighbor vertex
-   * to exist in the list (it will not check for duplicates).
+   * Note that this method allows multiple edges with the same neighbor vertex to exist in the list
+   * (it will not check for duplicates).
    *
-   * @param rctx RAMCloud transaction in which to perform the operation.
+   * This method will perform the operation in a transaction context if it is given (rctx) and
+   * non-transactionally if not.
+   *
+   * @param rctx RAMCloud transaction in which to perform the operation if not null.
+   * @param client RAMCloud client to use to perform the operation if rctx is null.
    * @param rcTableId The table in which the edge list is (to be) stored.
    * @param keyPrefix Key prefix for the edge list.
    * @param neighborId Remote vertex Id for this edge.
@@ -159,162 +162,6 @@ public class EdgeList {
    */
   public static boolean prepend(
       RAMCloudTransaction rctx,
-      long rcTableId,
-      byte[] keyPrefix,
-      UInt128 neighborId, 
-      byte[] serializedProperties,
-      int segment_size_limit,
-      int segment_target_split_point) {
-    /* Read out the head segment. */
-    ByteBuffer headSeg;
-    byte[] headSegKey = getSegmentKey(keyPrefix, 0);
-    boolean newList = false;
-    try {
-      RAMCloudObject headSegObj = rctx.read(rcTableId, headSegKey);
-      if (headSegObj != null) {
-        headSeg = ByteBuffer.allocate(headSegObj.getValueBytes().length)
-            .order(ByteOrder.LITTLE_ENDIAN)
-            .put(headSegObj.getValueBytes());
-        headSeg.flip();
-      } else {
-        headSeg = ByteBuffer.allocate(Integer.BYTES)
-            .order(ByteOrder.LITTLE_ENDIAN).putInt(0);
-        headSeg.flip();
-        newList = true;
-      }
-    } catch (ClientException e) {
-      throw new RuntimeException(e);
-    }
-
-    int serializedEdgeLength =
-        UInt128.BYTES + Short.BYTES + serializedProperties.length;
-
-    ByteBuffer serializedEdge = ByteBuffer.allocate(serializedEdgeLength)
-        .order(ByteOrder.LITTLE_ENDIAN);
-    serializedEdge.put(neighborId.toByteArray());
-    serializedEdge.putShort((short) serializedProperties.length);
-    serializedEdge.put(serializedProperties);
-    serializedEdge.flip();
-
-    /* Prepend edge to head segment. */
-    ByteBuffer prependedSeg =
-        ByteBuffer.allocate(serializedEdge.capacity() + headSeg.capacity())
-        .order(ByteOrder.LITTLE_ENDIAN);
-    int majorSegments = headSeg.getInt();
-    prependedSeg.putInt(majorSegments);
-    prependedSeg.put(serializedEdge);
-    prependedSeg.put(headSeg);
-    prependedSeg.flip();
-
-    /* Check if we need to split the head segment. */
-    if (prependedSeg.capacity() <= segment_size_limit) {
-      /* Common case, don't need to split. */
-      rctx.write(rcTableId, headSegKey, prependedSeg.array());
-    } else {
-      /* Head segment is too big, we need to find a good split point. In some
-       * special cases we won't be able to split, like when the segment is just
-       * one enormous edge. The following code sets splitIndex to the right
-       * point to split the head segment. */
-      int splitIndex = prependedSeg.capacity();
-      int currentNumTailSegments = prependedSeg.getInt();
-      while (prependedSeg.hasRemaining()) {
-        int edgeStartPos = prependedSeg.position();
-        int nextEdgeStartPos = edgeStartPos + UInt128.BYTES + Short.BYTES 
-            + prependedSeg.getShort(edgeStartPos + UInt128.BYTES);
-
-        if (nextEdgeStartPos >= segment_target_split_point) {
-          /*
-           * The current edge either stradles the split point, or is right up
-           * against it.
-           *
-           *                                       nextEdgeStartPos
-           *            <--left-->          <--right-->   V
-           * ------|--------------------|-----------------|--------
-           *       ^                    ^
-           * edgeStartPos     DEFAULT_SEGMENT_TARGET_SPLIT_POINT
-           */
-          int left = segment_target_split_point - edgeStartPos;
-          int right = nextEdgeStartPos - segment_target_split_point;
-
-          if (right < left) {
-            /* Target split point is closer to the start of the next edge in
-             * the list than the start of this edge. In this case we generally
-             * want to split at the start of the next edge, except for a
-             * special case handled here. */
-            if (nextEdgeStartPos > segment_size_limit) {
-              /* Special case, the current edge extends beyond the size limit.
-               * To still enforce the size limit policy we choose not to keep
-               * this edge in the head segment. */
-              splitIndex = edgeStartPos;
-              break;
-            } else {
-              splitIndex = nextEdgeStartPos;
-              break;
-            }
-          } else {
-            /* Target split point is closer to the start of this edge than the
-             * next. In this case we choose to make this edge part of the newly
-             * created segment. */
-            splitIndex = edgeStartPos;
-            break;
-          }
-        }
-
-        prependedSeg.position(nextEdgeStartPos);
-      }
-
-      prependedSeg.rewind();
-
-      if (splitIndex == prependedSeg.capacity()) {
-        /* We have chosen not to split this segment. */
-        rctx.write(rcTableId, headSegKey, prependedSeg.array());
-      } else {
-        /* Split based on splitIndex. */
-        ByteBuffer newHeadSeg = ByteBuffer.allocate(splitIndex)
-            .order(ByteOrder.LITTLE_ENDIAN);
-        ByteBuffer newTailSeg = ByteBuffer.allocate(prependedSeg.capacity() 
-            - splitIndex).order(ByteOrder.LITTLE_ENDIAN);
-
-        int newNumTailSegments = currentNumTailSegments + 1;
-
-        newHeadSeg.put(prependedSeg.array(), 0, splitIndex);
-        newHeadSeg.rewind();
-        newHeadSeg.putInt(newNumTailSegments);
-
-        newTailSeg.put(prependedSeg.array(), splitIndex,
-            prependedSeg.capacity() - splitIndex);
-
-        byte[] newTailSegKey = getSegmentKey(keyPrefix, newNumTailSegments);
-
-        rctx.write(rcTableId, headSegKey, newHeadSeg.array());
-        rctx.write(rcTableId, newTailSegKey, newTailSeg.array());
-      }
-    }
-
-    return newList;
-  }
-
-  /**
-   * Prepends the edge represented by the given neighbor vertex and serialized
-   * properties to this edge list. This version of prepend performs the
-   * operation outside of any transaction context. If the edge list does not
-   * exist, then this method will create a new one and return true to indicate
-   * that a new edge list has been created (otherwise the method returns false).
-   *
-   * Note that this method allows multiple edges with the same neighbor vertex
-   * to exist in the list (it will not check for duplicates).
-   *
-   * @param client RAMCloud client to use to perform the operation.
-   * @param rcTableId The table in which the edge list is (to be) stored.
-   * @param keyPrefix Key prefix for the edge list.
-   * @param neighborId Remote vertex Id for this edge.
-   * @param serializedProperties Pre-serialized properties for this edge.
-   * @param segment_size_limit Limit on the max size of segments.
-   * @param segment_target_split_point Where to split when splitting is needed.
-   *
-   * @return True if a new edge list was created, false otherwise.
-   */
-  public static boolean prepend(
       RAMCloud client,
       long rcTableId,
       byte[] keyPrefix,
@@ -327,7 +174,12 @@ public class EdgeList {
     byte[] headSegKey = getSegmentKey(keyPrefix, 0);
     boolean newList = false;
     try {
-      RAMCloudObject headSegObj = client.read(rcTableId, headSegKey);
+      RAMCloudObject headSegObj;
+      if (rctx != null)
+        headSegObj  = rctx.read(rcTableId, headSegKey);
+      else
+        headSegObj  = client.read(rcTableId, headSegKey);
+
       if (headSegObj != null) {
         headSeg = ByteBuffer.allocate(headSegObj.getValueBytes().length)
             .order(ByteOrder.LITTLE_ENDIAN)
@@ -366,7 +218,10 @@ public class EdgeList {
     /* Check if we need to split the head segment. */
     if (prependedSeg.capacity() <= segment_size_limit) {
       /* Common case, don't need to split. */
-      client.write(rcTableId, headSegKey, prependedSeg.array(), null);
+      if (rctx != null)
+        rctx.write(rcTableId, headSegKey, prependedSeg.array());
+      else
+        client.write(rcTableId, headSegKey, prependedSeg.array(), null);
     } else {
       /* Head segment is too big, we need to find a good split point. In some
        * special cases we won't be able to split, like when the segment is just
@@ -424,7 +279,10 @@ public class EdgeList {
 
       if (splitIndex == prependedSeg.capacity()) {
         /* We have chosen not to split this segment. */
-        client.write(rcTableId, headSegKey, prependedSeg.array(), null);
+        if (rctx != null)
+          rctx.write(rcTableId, headSegKey, prependedSeg.array());
+        else
+          client.write(rcTableId, headSegKey, prependedSeg.array(), null);
       } else {
         /* Split based on splitIndex. */
         ByteBuffer newHeadSeg = ByteBuffer.allocate(splitIndex)
@@ -443,8 +301,13 @@ public class EdgeList {
 
         byte[] newTailSegKey = getSegmentKey(keyPrefix, newNumTailSegments);
 
-        client.write(rcTableId, headSegKey, newHeadSeg.array(), null);
-        client.write(rcTableId, newTailSegKey, newTailSeg.array(), null);
+        if (rctx != null) {
+          rctx.write(rcTableId, headSegKey, newHeadSeg.array());
+          rctx.write(rcTableId, newTailSegKey, newTailSeg.array());
+        } else {
+          client.write(rcTableId, headSegKey, newHeadSeg.array(), null);
+          client.write(rcTableId, newTailSegKey, newTailSeg.array(), null);
+        }
       }
     }
 
