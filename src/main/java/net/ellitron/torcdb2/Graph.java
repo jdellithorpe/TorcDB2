@@ -105,6 +105,8 @@ public class Graph {
       this.tx = null;
       this.vertexTableId = client.createTable(graphName + "_vertexTable", numServers);
       this.edgeListTableId = client.createTable(graphName + "_edgeListTable", numServers);
+      this.vertexTableOS = null;
+      this.edgeListTableOS = null;
     }
   }
 
@@ -112,10 +114,25 @@ public class Graph {
    * Close our connection to the database. 
    *
    * Need to free up anything that was allocated in native libraries.
+   *
+   * If we were generating RAMCloud image files, then we need to close those file handles.
    */
   public void close() {
-    abortTx();
-    client.disconnect();
+    if (tx != null)
+      abortTx();
+
+    if (client != null)
+      client.disconnect();
+
+    try {
+      if (vertexTableOS != null)
+        vertexTableOS.close();
+
+      if (edgeListTableOS != null)
+        edgeListTableOS.close();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 
   /* **************************************************************************
@@ -515,7 +532,7 @@ public class Graph {
    * @param edgeLabel Edge label for the edges in this list.
    * @param direction Direction of the edges in this list relative to base.
    * @param neighborIds IDs of the neighbors in the edge list.
-   * @param propMaps Properties on edges in the list (null values not allowed).
+   * @param propMaps Properties on edges in the list.
    */
   public void loadEdges(
       final UInt128 baseVertexId, 
