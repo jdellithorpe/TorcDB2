@@ -245,11 +245,7 @@ public class Graph {
     List<byte[]> keyPrefixes = GraphHelper.getEdgeListKeyPrefixes(vCol, eLabel, dir, nLabels);
 
     Map<byte[], List<SerializedEdge>> serEdgeLists;
-    if (tx != null) {
-      serEdgeLists = EdgeList.batchRead(tx, edgeListTableId, keyPrefixes);
-    } else {
-      serEdgeLists = EdgeList.batchRead(client, edgeListTableId, keyPrefixes);
-    }
+    serEdgeLists = EdgeList.batchRead(tx, client, edgeListTableId, keyPrefixes);
 
     Map<Vertex, List<Vertex>> nbrListMap = new HashMap<>();
 
@@ -484,10 +480,7 @@ public class Graph {
       byte[] keyPrefix = GraphHelper.getEdgeListKeyPrefix(baseVertex.id(), edgeLabel, direction,
               neighborVertex.label());
 
-      if (tx != null)
-        EdgeList.prepend(tx, edgeListTableId, keyPrefix, neighborVertex.id(), serializedProps);
-      else
-        EdgeList.prepend(client, edgeListTableId, keyPrefix, neighborVertex.id(), serializedProps);
+      EdgeList.prepend(tx, client, edgeListTableId, keyPrefix, neighborVertex.id(), serializedProps);
     }
   }
 

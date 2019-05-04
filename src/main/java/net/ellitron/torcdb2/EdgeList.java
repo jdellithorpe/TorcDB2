@@ -120,21 +120,12 @@ public class EdgeList {
 
   public static boolean prepend(
       RAMCloudTransaction rctx,
-      long rcTableId,
-      byte[] keyPrefix,
-      UInt128 neighborId, 
-      byte[] serializedProperties) {
-    return prepend(rctx, null, rcTableId, keyPrefix, neighborId, serializedProperties,
-        DEFAULT_SEGMENT_SIZE_LIMIT, DEFAULT_SEGMENT_TARGET_SPLIT_POINT);
-  }
-
-  public static boolean prepend(
       RAMCloud client,
       long rcTableId,
       byte[] keyPrefix,
       UInt128 neighborId, 
       byte[] serializedProperties) {
-    return prepend(null, client, rcTableId, keyPrefix, neighborId, serializedProperties,
+    return prepend(rctx, client, rcTableId, keyPrefix, neighborId, serializedProperties, 
         DEFAULT_SEGMENT_SIZE_LIMIT, DEFAULT_SEGMENT_TARGET_SPLIT_POINT);
   }
 
@@ -506,131 +497,6 @@ public class EdgeList {
     }
   }
 
-  /**
-   * Batch reads in parallel all of the edges for all the given vertices.
-   *
-   * @param rctx RAMCloud transaction in which to perform the operation.
-   * @param rcTableId The table in which the edge list is (to be) stored.
-   * @param keyPrefix List of key prefixes for the edge lists.
-   *
-   * @return List of all the edges contained in the edge lists.
-   */
-  public static Map<byte[], List<SerializedEdge>> batchRead(
-      RAMCloudTransaction rctx,
-      long rcTableId,
-      List<byte[]> keyPrefixes) {
-    Map<byte[], LinkedList<RAMCloudTransactionReadOp>> readMap = new HashMap<>();
-    Map<byte[], List<SerializedEdge>> eListMap = new HashMap<>();
-
-    /* Async. read head segments. */
-    for (byte[] kp : keyPrefixes) {
-      LinkedList<RAMCloudTransactionReadOp> readOpList = new LinkedList<>();
-      byte[] headSegKey = getSegmentKey(kp, 0);
-      readOpList.addLast(new RAMCloudTransactionReadOp(rctx, rcTableId,
-            headSegKey, true));
-      readMap.put(kp, readOpList);
-    }
-
-    /* Process returned head segments and async. read tail segments. */
-    for (int i = 0; i < keyPrefixes.size(); i++) {
-      byte[] kp = keyPrefixes.get(i);
-
-      LinkedList<RAMCloudTransactionReadOp> readOpList = readMap.get(kp);
-      RAMCloudTransactionReadOp readOp = readOpList.removeFirst();
-      RAMCloudObject headSegObj;
-      try {
-        headSegObj = readOp.getValue();
-        if (headSegObj == null) {
-          continue;
-        }
-      } catch (ClientException e) {
-        throw new RuntimeException(e);
-      } finally {
-        readOp.close();
-      }
-
-      if (headSegObj == null) {
-        // Object does not exist.
-        continue;
-      }
-
-      ByteBuffer headSeg =
-          ByteBuffer.allocate(headSegObj.getValueBytes().length)
-          .order(ByteOrder.LITTLE_ENDIAN);
-      headSeg.put(headSegObj.getValueBytes());
-      headSeg.flip();
-
-      int numTailSegments = headSeg.getInt();
-
-      if (headSeg.hasRemaining() || numTailSegments > 0)
-        eListMap.put(kp, new LinkedList<>());
-
-      if (headSeg.hasRemaining()) {
-        List<SerializedEdge> eList = eListMap.get(kp);
-
-        while (headSeg.hasRemaining()) {
-          byte[] neighborIdBytes = new byte[UInt128.BYTES];
-          headSeg.get(neighborIdBytes);
-
-          UInt128 neighborId = new UInt128(neighborIdBytes);
-
-          short propLen = headSeg.getShort();
-
-          byte[] serializedProperties = new byte[propLen];
-          headSeg.get(serializedProperties);
-
-          eList.add(new SerializedEdge(serializedProperties, neighborId));
-        }
-      }
-
-      /* Queue up async. reads for tail segments. */
-      for (int j = numTailSegments; j > 0; --j) {
-        byte[] tailSegKey = getSegmentKey(kp, j);
-        readOpList.addLast(new RAMCloudTransactionReadOp(rctx, rcTableId,
-              tailSegKey, true));
-      }
-    }
-
-    /* Process returned tail segments. */
-    for (int i = 0; i < keyPrefixes.size(); i++) {
-      byte[] kp = keyPrefixes.get(i);
-
-      LinkedList<RAMCloudTransactionReadOp> readOpList = readMap.get(kp);
-
-      if (readOpList.size() > 0) {
-        List<SerializedEdge> eList = eListMap.get(kp);
-
-        while (readOpList.size() > 0) {
-          RAMCloudTransactionReadOp readOp = readOpList.removeFirst();
-          RAMCloudObject tailSegObj = readOp.getValue();
-          readOp.close();
-
-          ByteBuffer tailSeg =
-              ByteBuffer.allocate(tailSegObj.getValueBytes().length)
-              .order(ByteOrder.LITTLE_ENDIAN);
-          tailSeg.put(tailSegObj.getValueBytes());
-          tailSeg.flip();
-
-          while (tailSeg.hasRemaining()) {
-            byte[] neighborIdBytes = new byte[UInt128.BYTES];
-            tailSeg.get(neighborIdBytes);
-
-            UInt128 neighborId = new UInt128(neighborIdBytes);
-
-            short propLen = tailSeg.getShort();
-
-            byte[] serializedProperties = new byte[propLen];
-            tailSeg.get(serializedProperties);
-
-            eList.add(new SerializedEdge(serializedProperties, neighborId));
-          }
-        }
-      }
-    }
-
-    return eListMap;
-  }
-
   /* Metadata we want to keep track of for MutliReadObjects. */
   private static class MultiReadSpec {
     public byte[] keyPrefix;
@@ -651,54 +517,83 @@ public class EdgeList {
 
   /**
    * Batch reads in parallel all of the edges for all the given vertices.
-   * This version performs the operation outside of any transaction context.
    *
-   * @param client RAMCloud client to use to perform the operation.
+   * This method will perform the operation in a transaction context if it is given (rctx) and
+   * non-transactionally if not.
+   *
+   * @param rctx RAMCloud transaction in which to perform the operation if not null.
+   * @param client RAMCloud client to use to perform the operation if rctx is null.
    * @param rcTableId The table in which the edge list is (to be) stored.
    * @param keyPrefix List of key prefixes for the edge lists.
    *
    * @return List of all the Edges contained in the edge lists.
    */ 
   public static Map<byte[], List<SerializedEdge>> batchRead(
+      RAMCloudTransaction rctx,
       RAMCloud client,
       long rcTableId,
       List<byte[]> keyPrefixes) {
-    LinkedList<MultiReadObject> requestQ = new LinkedList<>();
+    // Future read requests are appended to this queue as we figure out what we need to read. We
+    // store either RAMCloudTransactionReadOps or MultiReadObjets in this queue, depending on if we
+    // are executing in a transaction context or not.
+    LinkedList<Object> requestQ = new LinkedList<>();
     LinkedList<MultiReadSpec> specQ = new LinkedList<>();
     Map<byte[], List<SerializedEdge>> eListMap = new HashMap<>();
 
     /* Add head segments to queue and prepare edgeMap. */
     for (int i = 0; i < keyPrefixes.size(); i++) {
       byte[] headSegKey = getSegmentKey(keyPrefixes.get(i), 0);
-      requestQ.addLast(new MultiReadObject(rcTableId, headSegKey));
-      specQ.addLast(new MultiReadSpec(keyPrefixes.get(i), 
-            null, null, null, true));
+      if (rctx != null)
+        requestQ.addLast(new RAMCloudTransactionReadOp(rctx, rcTableId, headSegKey, true));
+      else
+        requestQ.addLast(new MultiReadObject(rcTableId, headSegKey));
+
+      specQ.addLast(new MultiReadSpec(keyPrefixes.get(i), null, null, null, true));
     }
 
-    /* Go through request queue and read at most MAX_ASYNC_READS at a time. */
-    ByteBuffer seg =
-        ByteBuffer.allocate(DEFAULT_SEGMENT_SIZE_LIMIT*2)
-        .order(ByteOrder.LITTLE_ENDIAN);
+    /* Go through request queue and read at most DEFAULT_MAX_MULTIREAD_SIZE at a time. */
+    ByteBuffer seg = ByteBuffer.allocate(DEFAULT_SEGMENT_SIZE_LIMIT*2)
+      .order(ByteOrder.LITTLE_ENDIAN);
     while (requestQ.size() > 0) {
       int batchSize = Math.min(requestQ.size(), DEFAULT_MAX_MULTIREAD_SIZE);
-      MultiReadObject[] requests = new MultiReadObject[batchSize];
-      for (int i = 0; i < batchSize; i++) {
-        requests[i] = requestQ.removeFirst();
+
+      RAMCloudObject[] rcobjs = new RAMCloudObject[batchSize];
+      if (rctx != null) {
+        for (int i = 0; i < batchSize; i++) {
+          RAMCloudTransactionReadOp readOp = (RAMCloudTransactionReadOp)requestQ.removeFirst();
+          try {
+            rcobjs[i] = readOp.getValue();
+          } catch (ClientException e) {
+            throw new RuntimeException(e);
+          } finally {
+            readOp.close();
+          }
+        }
+      } else {
+        MultiReadObject[] mrobjs = new MultiReadObject[batchSize];
+        for (int i = 0; i < batchSize; i++) {
+          mrobjs[i] = (MultiReadObject)requestQ.removeFirst();
+          rcobjs[i] = (RAMCloudObject)mrobjs[i];
+        }
+
+        client.read(mrobjs);
       }
 
-      client.read(requests);
-
-      /* Process this batch, adding more MultiReadObjects to the queue if
-       * needed. */
+      /* Process this batch, adding more requests to the queue if needed. */
       for (int i = 0; i < batchSize; i++) {
         MultiReadSpec spec = specQ.removeFirst();
 
-        if (requests[i].getStatus() != Status.STATUS_OK) {
-          if (requests[i].getStatus() == Status.STATUS_OBJECT_DOESNT_EXIST) {
+        // See if this object exists. If not, short circuit this loop iteration.
+        if (rctx != null) {
+          if (rcobjs[i] == null)
             continue;
-          } else {
-            throw new RuntimeException("Segment had status " + 
-                requests[i].getStatus());
+        } else {
+          if (((MultiReadObject)rcobjs[i]).getStatus() != Status.STATUS_OK) {
+            if (((MultiReadObject)rcobjs[i]).getStatus() == Status.STATUS_OBJECT_DOESNT_EXIST) {
+              continue;
+            } else {
+              throw new RuntimeException("Segment had status " + ((MultiReadObject)rcobjs[i]).getStatus());
+            }
           }
         }
 
@@ -711,7 +606,7 @@ public class EdgeList {
         }
 
         seg.clear();
-        seg.put(requests[i].getValueBytes());
+        seg.put(rcobjs[i].getValueBytes());
         seg.flip();
 
         if (spec.isHeadSeg) {
@@ -719,7 +614,10 @@ public class EdgeList {
           int numTailSegments = seg.getInt();
           for (int j = numTailSegments; j > 0; --j) {
             byte[] tailSegKey = getSegmentKey(spec.keyPrefix, j);
-            requestQ.addLast(new MultiReadObject(rcTableId, tailSegKey));
+            if (rctx != null)
+              requestQ.addLast(new RAMCloudTransactionReadOp(rctx, rcTableId, tailSegKey, true));
+            else
+              requestQ.addLast(new MultiReadObject(rcTableId, tailSegKey));
             spec.isHeadSeg = false;
             specQ.addLast(spec);
           }
