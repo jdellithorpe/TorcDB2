@@ -421,18 +421,13 @@ public class Graph {
     if (v.getProperties() == null)
       v.setProperties(new HashMap<>(0));
 
-    byte[] labelByteArray = GraphHelper.serializeObject(v.label());
     byte[] serializedProps = GraphHelper.serializeObject(v.getProperties());
-    byte[] labelKeyByteArray = GraphHelper.getVertexLabelKey(v.id());
     byte[] propKeyByteArray = GraphHelper.getVertexPropertiesKey(v.id());
 
-    if (tx != null) {
-      tx.write(vertexTableId, labelKeyByteArray, labelByteArray);
+    if (tx != null)
       tx.write(vertexTableId, propKeyByteArray, serializedProps);
-    } else {
-      client.write(vertexTableId, labelKeyByteArray, labelByteArray, null);
+    else
       client.write(vertexTableId, propKeyByteArray, serializedProps, null);
-    }
   }
 
   /**

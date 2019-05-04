@@ -266,25 +266,8 @@ public class GraphHelper {
    * *************************************************************************/
 
   public static enum VertexKeyType {
-
-    LABEL,
     PROPERTIES,
     EDGE_LIST,
-    EDGE_LABELS,
-  }
-
-  /** 
-   * Get the RAMCloud key for the object storing the vertex's label.
-   *
-   * @return Byte array for the RAMCloud key.
-   */
-  public static byte[] getVertexLabelKey(UInt128 vertexId) {
-    ByteBuffer buffer = ByteBuffer.allocate(UInt128.BYTES + Byte.BYTES)
-        .order(ByteOrder.LITTLE_ENDIAN);
-    buffer.putLong(vertexId.getUpperLong());
-    buffer.putLong(vertexId.getLowerLong());
-    buffer.put((byte) VertexKeyType.LABEL.ordinal());
-    return buffer.array();
   }
 
   /** 
