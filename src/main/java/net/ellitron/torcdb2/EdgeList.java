@@ -631,8 +631,11 @@ public class EdgeList {
 
           short propLen = seg.getShort();
 
-          byte[] serializedProperties = new byte[propLen];
-          seg.get(serializedProperties);
+          byte[] serializedProperties = null;
+          if (propLen > 0) {
+            serializedProperties = new byte[propLen];
+            seg.get(serializedProperties);
+          }
 
           eList.add(new SerializedEdge(serializedProperties, neighborId));
         }

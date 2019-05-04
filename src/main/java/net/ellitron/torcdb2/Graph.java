@@ -289,9 +289,13 @@ public class Graph {
               uniqNbrSet.add(v);
             }
 
-            if (fillEdge)
-              ePropList.add((Map<Object, Object>)GraphHelper.deserializeObject(
-                    serEdge.serializedProperties));
+            if (fillEdge) {
+              if (serEdge.serializedProperties != null)
+                ePropList.add((Map<Object, Object>)GraphHelper.deserializeObject(
+                      serEdge.serializedProperties));
+              else
+                ePropList.add(new HashMap<Object, Object>());
+            }
           }
         }
 
