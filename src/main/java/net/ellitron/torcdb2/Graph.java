@@ -456,10 +456,11 @@ public class Graph {
    * @param props Properties for the edge.
    */
   public void addEdge(Vertex src, String edgeLabel, Vertex dst, Map<Object, Object> props) {
-    if (props == null)
-      props = new HashMap<>(0);
-
-    byte[] serializedProps = GraphHelper.serializeObject(props);
+    byte[] serializedProps;
+    if (props == null || props.size() == 0)
+      serializedProps = new byte[0];
+    else
+      serializedProps = GraphHelper.serializeObject(props);
 
     /* Add one vertex to the other's edge list, and vice versa, choosing one as the base and the
      * other as the neighbor. */
