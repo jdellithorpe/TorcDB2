@@ -36,4 +36,25 @@ public class TraversalResult {
     this.pMap = pMap;
     this.vSet = vSet;
   }
+
+  public String toString() {
+    StringBuilder sb = new StringBuilder();
+    if (vMap != null)
+      sb.append("TraversalResult[vMap: " + vMap.toString() + ", ");
+    else
+      sb.append("[vMap: null, ");
+
+    if (pMap != null)
+      sb.append("pMap: " + pMap.toString() + ", ");
+    else
+      sb.append("pMap: null, ");
+
+    if (vSet != null)
+      sb.append("vSet: " + vSet.toString() + "]");
+    else
+      sb.append("vSet: null]");
+
+
+    return sb.toString();
+  }
 }

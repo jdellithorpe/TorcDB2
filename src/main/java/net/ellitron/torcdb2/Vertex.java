@@ -86,7 +86,9 @@ public class Vertex {
    */
   @Override
   public String toString() {
-    return id.toString();
+    StringBuilder sb = new StringBuilder();
+    sb.append(String.format("Vertex[ID: %d, label: %s]", id.getLowerLong(), label));
+    return sb.toString();
   }
 
 }
