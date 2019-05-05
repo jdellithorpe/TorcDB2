@@ -947,7 +947,7 @@ public class EdgeList {
    */
   private static byte[] getSegmentKey(byte[] keyPrefix, EdgeListKeyType type, int segmentNumber) {
     ByteBuffer buffer =
-        ByteBuffer.allocate(keyPrefix.length + Integer.BYTES)
+        ByteBuffer.allocate(keyPrefix.length + Byte.BYTES + Integer.BYTES)
         .order(ByteOrder.LITTLE_ENDIAN);
     buffer.put(keyPrefix);
     buffer.put((byte) type.ordinal());
