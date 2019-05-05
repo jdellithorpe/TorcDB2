@@ -211,18 +211,18 @@ public class Graph {
       Vertex v, 
       String eLabel, 
       Direction dir, 
-      boolean fillEdge,
+      boolean readProps,
       String ... neighborLabels) {
-    return traverse(Collections.singleton(v), eLabel, dir, fillEdge, neighborLabels);
+    return traverse(Collections.singleton(v), eLabel, dir, readProps, neighborLabels);
   }
 
   public TraversalResult traverse(
       TraversalResult r, 
       String eLabel, 
       Direction dir, 
-      boolean fillEdge,
+      boolean readProps,
       String ... neighborLabels) {
-    return traverse(r.vSet, eLabel, dir, fillEdge, neighborLabels);
+    return traverse(r.vSet, eLabel, dir, readProps, neighborLabels);
   }
 
   /** 
@@ -231,7 +231,7 @@ public class Graph {
    * @param vCol Collection of vertices to start from.
    * @param eLabel Label of edge to traverse.
    * @param dir Direction of edge.
-   * @param fillEdge Whether or not to fill in edge properties in the return result
+   * @param readProps Whether or not to fill in edge properties in the return result
    * @param nLabels Labels of neighbor vertices.
    *
    * @return TraversalResult describing the result of the traversal.
@@ -240,17 +240,17 @@ public class Graph {
       Collection<Vertex> vCol,
       String eLabel, 
       Direction dir, 
-      boolean fillEdge,
+      boolean readProps,
       String ... nLabels) {
     List<byte[]> keyPrefixes = GraphHelper.getEdgeListKeyPrefixes(vCol, eLabel, dir, nLabels);
 
     Map<byte[], List<SerializedEdge>> serEdgeLists;
-    serEdgeLists = EdgeList.batchRead(tx, client, edgeListTableId, keyPrefixes);
+    serEdgeLists = EdgeList.batchRead(tx, client, edgeListTableId, keyPrefixes, readProps);
 
     Map<Vertex, List<Vertex>> nbrListMap = new HashMap<>();
 
     Map<Vertex, List<Map<Object, Object>>> ePropListMap = null;
-    if (fillEdge)
+    if (readProps)
       ePropListMap = new HashMap<>();
 
     Map<UInt128, Vertex> nbrDedupMap = new HashMap<>();
@@ -268,12 +268,12 @@ public class Graph {
           List<Map<Object, Object>> ePropList = null;
           if (nbrListMap.containsKey(vertex)) {
             nList = nbrListMap.get(vertex);
-            if (fillEdge)
+            if (readProps)
               ePropList = ePropListMap.get(vertex);
           } else {
             nList = new ArrayList<>(serEdgeList.size());
             nbrListMap.put(vertex, nList);
-            if (fillEdge) {
+            if (readProps) {
               ePropList = new ArrayList<>(serEdgeList.size());
               ePropListMap.put(vertex, ePropList);
             }
@@ -289,7 +289,7 @@ public class Graph {
               uniqNbrSet.add(v);
             }
 
-            if (fillEdge) {
+            if (readProps) {
               if (serEdge.serializedProperties != null)
                 ePropList.add((Map<Object, Object>)GraphHelper.deserializeObject(
                       serEdge.serializedProperties));
