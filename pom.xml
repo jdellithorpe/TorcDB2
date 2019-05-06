@@ -4,7 +4,7 @@
   <groupId>net.ellitron.torcdb2</groupId>
   <artifactId>torcdb2</artifactId>
   <name>TorcDB2: TinkerPop on RAMCloud 2</name>
-  <version>0.1.0</version>
+  <version>1.0.0</version>
   <packaging>jar</packaging>
   <dependencies>
     <dependency>
