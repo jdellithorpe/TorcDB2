@@ -548,4 +548,14 @@ public class Graph {
 
     EdgeList.writeListToFile(edgeListTableOS, keyPrefix, neighborIds, serializedPropList);
   }
+
+  /* **************************************************************************
+   *
+   * Other
+   *
+   * *************************************************************************/
+
+  public RAMCloud getClient() {
+    return client;
+  }
 }
