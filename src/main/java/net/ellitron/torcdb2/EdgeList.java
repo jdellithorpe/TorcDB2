@@ -525,6 +525,7 @@ public class EdgeList {
    * @param client RAMCloud client to use to perform the operation if rctx is null.
    * @param rcTableId The table in which the edge list is (to be) stored.
    * @param keyPrefix List of key prefixes for the edge lists.
+   * @param parseProps Whether or not to parse property information from edges.
    *
    * @return List of all the Edges contained in the edge lists.
    */ 
@@ -532,7 +533,8 @@ public class EdgeList {
       RAMCloudTransaction rctx,
       RAMCloud client,
       long rcTableId,
-      List<byte[]> keyPrefixes) {
+      List<byte[]> keyPrefixes,
+      boolean parseProps) {
     // Future read requests are appended to this queue as we figure out what we need to read. We
     // store either RAMCloudTransactionReadOps or MultiReadObjets in this queue, depending on if we
     // are executing in a transaction context or not.
@@ -632,11 +634,13 @@ public class EdgeList {
           short propLen = seg.getShort();
 
           byte[] serializedProperties = null;
-          if (propLen > 0) {
+          if (parseProps && propLen > 0) {
             serializedProperties = new byte[propLen];
             seg.get(serializedProperties);
+          } else {
+            seg.position(seg.position() + propLen);
           }
-
+      
           eList.add(new SerializedEdge(serializedProperties, neighborId));
         }
       }

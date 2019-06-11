@@ -245,7 +245,8 @@ public class Graph {
     List<byte[]> keyPrefixes = GraphHelper.getEdgeListKeyPrefixes(vCol, eLabel, dir, nLabels);
 
     Map<byte[], List<SerializedEdge>> serEdgeLists;
-    serEdgeLists = EdgeList.batchRead(tx, client, edgeListTableId, keyPrefixes);
+
+    serEdgeLists = EdgeList.batchRead(tx, client, edgeListTableId, keyPrefixes, fillEdge);
 
     Map<Vertex, List<Vertex>> nbrListMap = new HashMap<>();
 
