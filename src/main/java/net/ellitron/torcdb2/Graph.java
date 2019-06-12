@@ -281,8 +281,9 @@ public class Graph {
           }
 
           for (SerializedEdge serEdge : serEdgeList) {
-            if (nbrDedupMap.containsKey(serEdge.vertexId)) {
-              nList.add(nbrDedupMap.get(serEdge.vertexId));
+            Vertex nv = nbrDedupMap.get(serEdge.vertexId);
+            if (nv != null) {
+              nList.add(nv);
             } else {
               Vertex v = new Vertex(serEdge.vertexId, nLabel);
               nList.add(v);
