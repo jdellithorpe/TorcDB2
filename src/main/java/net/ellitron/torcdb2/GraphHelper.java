@@ -278,8 +278,7 @@ public class GraphHelper {
   public static byte[] getVertexPropertiesKey(UInt128 vertexId) {
     ByteBuffer buffer = ByteBuffer.allocate(UInt128.BYTES + Byte.BYTES)
         .order(ByteOrder.LITTLE_ENDIAN);
-    buffer.putLong(vertexId.getUpperLong());
-    buffer.putLong(vertexId.getLowerLong());
+    buffer.put(vertexId.toByteArray());
     buffer.put((byte) VertexKeyType.PROPERTIES.ordinal());
     return buffer.array();
   }
@@ -318,8 +317,7 @@ public class GraphHelper {
             + Byte.BYTES 
             + Short.BYTES + vertexLabelByteArray.length)
         .order(ByteOrder.LITTLE_ENDIAN);
-    buffer.putLong(vertexId.getUpperLong());
-    buffer.putLong(vertexId.getLowerLong());
+    buffer.put(vertexId.toByteArray());
     buffer.putShort((short) edgeLabelByteArray.length);
     buffer.put(edgeLabelByteArray);
     buffer.put((byte) dir.ordinal());
@@ -350,8 +348,7 @@ public class GraphHelper {
           .order(ByteOrder.LITTLE_ENDIAN);
       for (Vertex vertex : vCol) {
         buffer.rewind();
-        buffer.putLong(vertex.id().getUpperLong());
-        buffer.putLong(vertex.id().getLowerLong());
+        buffer.put(vertex.id().toByteArray());
         buffer.putShort((short) eLabelByteArray.length);
         buffer.put(eLabelByteArray);
         buffer.put((byte) dir.ordinal());

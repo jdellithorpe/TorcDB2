@@ -38,6 +38,7 @@ public class UInt128 implements Comparable<UInt128> {
 
   private final long upperLong;
   private final long lowerLong;
+  private final byte[] val;
 
   /**
    * Constructs a UInt128 from a byte array value.
@@ -50,6 +51,7 @@ public class UInt128 implements Comparable<UInt128> {
     buf.flip();
     this.upperLong = buf.getLong();
     this.lowerLong = buf.getLong();
+    this.val = buf.array();
   }
 
   /**
@@ -60,8 +62,12 @@ public class UInt128 implements Comparable<UInt128> {
    * @param lowerLong Lower 64 bits.
    */
   public UInt128(final long upperLong, final long lowerLong) {
+    ByteBuffer buf = ByteBuffer.allocate(BYTES).order(ByteOrder.LITTLE_ENDIAN);
+    buf.putLong(upperLong);
+    buf.putLong(lowerLong);
     this.upperLong = upperLong;
     this.lowerLong = lowerLong;
+    this.val = buf.array();
   }
 
   /**
@@ -89,10 +95,7 @@ public class UInt128 implements Comparable<UInt128> {
    * @return Byte array containing this number in big-endian format.
    */
   public byte[] toByteArray() {
-    ByteBuffer buf = ByteBuffer.allocate(BYTES).order(ByteOrder.LITTLE_ENDIAN);
-    buf.putLong(upperLong);
-    buf.putLong(lowerLong);
-    return buf.array();
+    return val;
   }
 
   /**
@@ -115,41 +118,8 @@ public class UInt128 implements Comparable<UInt128> {
    */
   @Override
   public int compareTo(UInt128 that) {
-    long lower63BitMask = 0x7FFFFFFFFFFFFFFFL;
-
-    if (this.upperLong != that.upperLong) {
-      if (this.upperLong < 0 && that.upperLong > 0) {
-        return 1;
-      }
-
-      if (this.upperLong > 0 && that.upperLong < 0) {
-        return -1;
-      }
-
-      if ((this.upperLong & lower63BitMask)
-          > (that.upperLong & lower63BitMask)) {
-        return 1;
-      }
-
-      return -1;
-    } else if (this.lowerLong != that.lowerLong) {
-      if (this.lowerLong < 0 && that.lowerLong > 0) {
-        return 1;
-      }
-
-      if (this.lowerLong > 0 && that.lowerLong < 0) {
-        return -1;
-      }
-
-      if ((this.lowerLong & lower63BitMask)
-          > (that.lowerLong & lower63BitMask)) {
-        return 1;
-      }
-
-      return -1;
-    }
-
-    return 0;
+    int ret = Long.compareUnsigned(this.upperLong, that.upperLong);
+    return ret != 0 ? ret : Long.compareUnsigned(this.lowerLong, that.lowerLong);
   }
 
   /**
