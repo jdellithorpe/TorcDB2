@@ -45,7 +45,7 @@ public class UInt128 implements Comparable<UInt128> {
    * @param val Byte array in big-endian format.
    */
   public UInt128(byte[] val) {
-    ByteBuffer buf = ByteBuffer.allocate(BYTES).order(ByteOrder.BIG_ENDIAN);
+    ByteBuffer buf = ByteBuffer.allocate(BYTES).order(ByteOrder.LITTLE_ENDIAN);
     buf.put(val);
     buf.flip();
     this.upperLong = buf.getLong();
@@ -89,7 +89,7 @@ public class UInt128 implements Comparable<UInt128> {
    * @return Byte array containing this number in big-endian format.
    */
   public byte[] toByteArray() {
-    ByteBuffer buf = ByteBuffer.allocate(BYTES).order(ByteOrder.BIG_ENDIAN);
+    ByteBuffer buf = ByteBuffer.allocate(BYTES).order(ByteOrder.LITTLE_ENDIAN);
     buf.putLong(upperLong);
     buf.putLong(lowerLong);
     return buf.array();
