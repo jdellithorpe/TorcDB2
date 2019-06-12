@@ -40,31 +40,13 @@ public class UInt128 implements Comparable<UInt128> {
   private final long lowerLong;
 
   /**
-   * Constructs a UInt128 from a byte array value. The byte array value is
-   * interpreted as unsigned and in big-endian format. If the byte array is
-   * less than 16 bytes, then the higher order bytes of the resulting UInt128
-   * are padded with 0s. If the byte array is greater than 16 bytes, then the
-   * lower 16 bytes are used.
+   * Constructs a UInt128 from a byte array value.
    *
    * @param val Byte array in big-endian format.
    */
   public UInt128(byte[] val) {
-    byte[] res = new byte[BYTES];
-
-    if (val.length >= BYTES) {
-      res = Arrays.copyOfRange(val, val.length - BYTES, val.length);
-    } else {
-      for (int i = 0; i < BYTES; i++) {
-        if (i < (BYTES - val.length)) {
-          res[i] = 0;
-        } else {
-          res[i] = val[i - (BYTES - val.length)];
-        }
-      }
-    }
-
     ByteBuffer buf = ByteBuffer.allocate(BYTES).order(ByteOrder.BIG_ENDIAN);
-    buf.put(res);
+    buf.put(val);
     buf.flip();
     this.upperLong = buf.getLong();
     this.lowerLong = buf.getLong();
