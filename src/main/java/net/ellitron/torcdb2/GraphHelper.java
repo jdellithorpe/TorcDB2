@@ -265,31 +265,13 @@ public class GraphHelper {
    *
    * *************************************************************************/
 
-  public static enum VertexKeyType {
-    PROPERTIES,
-    EDGE_LIST,
-  }
-
   /** 
    * Get the RAMCloud key for the object storing the vertex's properties.
    *
    * @return Byte array for the RAMCloud key.
    */
   public static byte[] getVertexPropertiesKey(UInt128 vertexId) {
-    ByteBuffer buffer = ByteBuffer.allocate(UInt128.BYTES + Byte.BYTES)
-        .order(ByteOrder.LITTLE_ENDIAN);
-    buffer.put(vertexId.toByteArray());
-    buffer.put((byte) VertexKeyType.PROPERTIES.ordinal());
-    return buffer.array();
-  }
-
-  /** 
-   * Get the VertexKeyType from the RAMCloud key byte array.
-   *
-   * @return VertexKeyType for the given key's byte array.
-   */
-  public static VertexKeyType getVertexKeyType(byte[] key) {
-    return VertexKeyType.values()[key[UInt128.BYTES]];
+    return vertexId.toByteArray();
   }
 
   /**
@@ -307,16 +289,19 @@ public class GraphHelper {
    *
    * @return RAMCloud Key.
    */
-  public static byte[] getEdgeListKeyPrefix(UInt128 vertexId, String edgeLabel,
-      Direction dir, String vertexLabel) {
+  public static byte[] getEdgeListKeyPrefix(
+      UInt128 vertexId, 
+      String edgeLabel,
+      Direction dir, 
+      String vertexLabel) {
     byte[] edgeLabelByteArray = edgeLabel.getBytes(DEFAULT_CHAR_ENCODING);
     byte[] vertexLabelByteArray = vertexLabel.getBytes(DEFAULT_CHAR_ENCODING);
-    ByteBuffer buffer =
-        ByteBuffer.allocate(UInt128.BYTES 
-            + Short.BYTES + edgeLabelByteArray.length
-            + Byte.BYTES 
-            + Short.BYTES + vertexLabelByteArray.length)
-        .order(ByteOrder.LITTLE_ENDIAN);
+    ByteBuffer buffer = ByteBuffer.allocate(
+        UInt128.BYTES
+        + Short.BYTES + edgeLabelByteArray.length
+        + Byte.BYTES 
+        + Short.BYTES + vertexLabelByteArray.length)
+      .order(ByteOrder.LITTLE_ENDIAN);
     buffer.put(vertexId.toByteArray());
     buffer.putShort((short) edgeLabelByteArray.length);
     buffer.put(edgeLabelByteArray);
@@ -340,12 +325,12 @@ public class GraphHelper {
     for (String nLabel : nLabels) {
       byte[] nLabelByteArray =
         nLabel.getBytes(GraphHelper.DEFAULT_CHAR_ENCODING);
-      ByteBuffer buffer =
-          ByteBuffer.allocate(UInt128.BYTES 
-              + Short.BYTES + eLabelByteArray.length
-              + Byte.BYTES 
-              + Short.BYTES + nLabelByteArray.length)
-          .order(ByteOrder.LITTLE_ENDIAN);
+      ByteBuffer buffer = ByteBuffer.allocate(
+          UInt128.BYTES 
+          + Short.BYTES + eLabelByteArray.length
+          + Byte.BYTES 
+          + Short.BYTES + nLabelByteArray.length)
+        .order(ByteOrder.LITTLE_ENDIAN);
       for (Vertex vertex : vCol) {
         buffer.rewind();
         buffer.put(vertex.id().toByteArray());
