@@ -624,10 +624,10 @@ public class EdgeList {
           if (parseProps)
             pList = pMap.get(spec.baseVertex);
         } else {
-          vList = new LinkedList<>();
+          vList = new ArrayList<>();
           vMap.put(spec.baseVertex, vList);
           if (parseProps) {
-            pList = new LinkedList<>();
+            pList = new ArrayList<>();
             pMap.put(spec.baseVertex, pList);
           }
         }
