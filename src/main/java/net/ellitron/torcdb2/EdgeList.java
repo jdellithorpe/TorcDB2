@@ -529,7 +529,7 @@ public class EdgeList {
    *
    * @return List of all the Edges contained in the edge lists.
    */ 
-  public static Map<byte[], List<SerializedEdge>> batchRead(
+  public static Map<byte[], List<ParsedEdge>> batchRead(
       RAMCloudTransaction rctx,
       RAMCloud client,
       long rcTableId,
@@ -540,7 +540,7 @@ public class EdgeList {
     // are executing in a transaction context or not.
     LinkedList<Object> requestQ = new LinkedList<>();
     LinkedList<MultiReadSpec> specQ = new LinkedList<>();
-    Map<byte[], List<SerializedEdge>> eListMap = new HashMap<>();
+    Map<byte[], List<ParsedEdge>> eListMap = new HashMap<>();
 
     /* Add head segments to queue and prepare edgeMap. */
     for (int i = 0; i < keyPrefixes.size(); i++) {
@@ -599,7 +599,7 @@ public class EdgeList {
           }
         }
 
-        List<SerializedEdge> eList;
+        List<ParsedEdge> eList;
         if (eListMap.containsKey(spec.keyPrefix)) {
           eList = eListMap.get(spec.keyPrefix);
         } else {
@@ -633,15 +633,14 @@ public class EdgeList {
 
           short propLen = seg.getShort();
 
-          byte[] serializedProperties = null;
+          Map<Object, Object> deserializedProperties = null;
           if (parseProps && propLen > 0) {
-            serializedProperties = new byte[propLen];
-            seg.get(serializedProperties);
+            deserializedProperties = (Map<Object, Object>)GraphHelper.deserializeObject(seg);
           } else {
             seg.position(seg.position() + propLen);
           }
       
-          eList.add(new SerializedEdge(serializedProperties, neighborId));
+          eList.add(new ParsedEdge(deserializedProperties, neighborId));
         }
       }
     }

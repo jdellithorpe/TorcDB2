@@ -14,17 +14,19 @@
  */
 package net.ellitron.torcdb2;
 
+import java.util.Map;
+
 /**
- * Represents a serialized edge stored in a RAMCloud edge list.
+ * Represents a parsed edge from a RAMCloud edge list.
  *
  * @author Jonathan Ellithorpe (jde@cs.stanford.edu)
  */
-public class SerializedEdge {
-  public byte[] serializedProperties;
+public class ParsedEdge {
+  public Map<Object,Object> properties;
   public UInt128 vertexId;
 
-  public SerializedEdge(byte[] serializedProperties, UInt128 vertexId) {
-    this.serializedProperties = serializedProperties;
+  public ParsedEdge(Map<Object,Object> properties, UInt128 vertexId) {
+    this.properties = properties;
     this.vertexId = vertexId;
   }
 }

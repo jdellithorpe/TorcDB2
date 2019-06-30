@@ -242,11 +242,14 @@ public class Graph {
       Direction dir, 
       boolean fillEdge,
       String ... nLabels) {
+    long startTime = System.nanoTime();
+    long totalEdges = 0;
+
     List<byte[]> keyPrefixes = GraphHelper.getEdgeListKeyPrefixes(vCol, eLabel, dir, nLabels);
 
-    Map<byte[], List<SerializedEdge>> serEdgeLists;
+    Map<byte[], List<ParsedEdge>> parEdgeLists;
 
-    serEdgeLists = EdgeList.batchRead(tx, client, edgeListTableId, keyPrefixes, fillEdge);
+    parEdgeLists = EdgeList.batchRead(tx, client, edgeListTableId, keyPrefixes, fillEdge);
 
     Map<Vertex, List<Vertex>> nbrListMap = new HashMap<>();
 
@@ -262,8 +265,9 @@ public class Graph {
       for (Vertex vertex : vCol) {
         byte[] keyPrefix = keyPrefixes.get(i);
 
-        if (serEdgeLists.containsKey(keyPrefix)) {
-          List<SerializedEdge> serEdgeList = serEdgeLists.get(keyPrefix);
+        if (parEdgeLists.containsKey(keyPrefix)) {
+          List<ParsedEdge> parEdgeList = parEdgeLists.get(keyPrefix);
+          totalEdges += parEdgeList.size();
 
           List<Vertex> nList;
           List<Map<Object, Object>> ePropList = null;
@@ -272,29 +276,28 @@ public class Graph {
             if (fillEdge)
               ePropList = ePropListMap.get(vertex);
           } else {
-            nList = new ArrayList<>(serEdgeList.size());
+            nList = new ArrayList<>(parEdgeList.size());
             nbrListMap.put(vertex, nList);
             if (fillEdge) {
-              ePropList = new ArrayList<>(serEdgeList.size());
+              ePropList = new ArrayList<>(parEdgeList.size());
               ePropListMap.put(vertex, ePropList);
             }
           }
 
-          for (SerializedEdge serEdge : serEdgeList) {
-            Vertex nv = nbrDedupMap.get(serEdge.vertexId);
+          for (ParsedEdge parEdge : parEdgeList) {
+            Vertex nv = nbrDedupMap.get(parEdge.vertexId);
             if (nv != null) {
               nList.add(nv);
             } else {
-              Vertex v = new Vertex(serEdge.vertexId, nLabel);
+              Vertex v = new Vertex(parEdge.vertexId, nLabel);
               nList.add(v);
-              nbrDedupMap.put(serEdge.vertexId, v);
+              nbrDedupMap.put(parEdge.vertexId, v);
               uniqNbrSet.add(v);
             }
 
             if (fillEdge) {
-              if (serEdge.serializedProperties != null)
-                ePropList.add((Map<Object, Object>)GraphHelper.deserializeObject(
-                      serEdge.serializedProperties));
+              if (parEdge.properties != null)
+                ePropList.add(parEdge.properties);
               else
                 ePropList.add(new HashMap<Object, Object>());
             }
@@ -303,7 +306,9 @@ public class Graph {
 
         i++;
       }
-    }    
+    }
+
+    System.out.println(String.format("graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d", vCol.size(), totalEdges, uniqNbrSet.size()));
 
     return new TraversalResult(nbrListMap, ePropListMap, uniqNbrSet);
   }

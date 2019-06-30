@@ -259,6 +259,43 @@ public class GraphHelper {
     }
   }
 
+  public static Object deserializeObject(ByteBuffer buffer) {
+    TypeCode type = TypeCode.valueOf(buffer.get());
+    switch (type) {
+      case INTEGER:
+        int intVal = buffer.getInt();
+        return new Integer(intVal);
+      case LONG:
+        long longVal = buffer.getLong();
+        return new Long(longVal);
+      case STRING:
+        short strLen = buffer.getShort();
+        byte[] strVal = new byte[strLen];
+        buffer.get(strVal);
+        return new String(strVal, 0, strLen, DEFAULT_CHAR_ENCODING);
+      case LIST:
+        short size = buffer.getShort();
+        List<Object> list = new ArrayList<>(size);
+        for (int i = 0; i < size; i++)
+          list.add(deserializeObject(buffer));
+        return list;
+      case MAP:
+        short entries = buffer.getShort();
+        Map<Object, Object> map = new ArrayMap<>(entries);
+        for (int i = 0; i < entries; i++) {
+          Object key = deserializeObject(buffer);
+          Object val = deserializeObject(buffer);
+          map.put(key, val);
+        }
+        return map;
+      default:
+        throw new RuntimeException(String.format(
+              "Unrecognized data type: %s. Unable to serialize.", 
+              type));
+    }
+  }
+
+
   /* **************************************************************************
    *
    * RAMCloud object key encodings.
