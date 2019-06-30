@@ -500,18 +500,18 @@ public class EdgeList {
   /* Metadata we want to keep track of for MutliReadObjects. */
   private static class MultiReadSpec {
     public byte[] keyPrefix;
-    public UInt128 baseVertexId;
-    public String edgeLabel;
-    public Direction direction;
+    public Vertex baseVertex;
+    public String neighborLabel;
     public boolean isHeadSeg;
 
-    public MultiReadSpec(byte[] keyPrefix, UInt128 baseVertexId, 
-        String edgeLabel, Direction direction, boolean isHeadSeg) {
-        this.keyPrefix = keyPrefix;
-        this.baseVertexId = baseVertexId;
-        this.edgeLabel = edgeLabel;
-        this.direction = direction;
-        this.isHeadSeg = isHeadSeg;
+    public MultiReadSpec(byte[] keyPrefix, 
+        Vertex baseVertex, 
+        String neighborLabel, 
+        boolean isHeadSeg) {
+      this.keyPrefix = keyPrefix;
+      this.baseVertex = baseVertex;
+      this.neighborLabel = neighborLabel;
+      this.isHeadSeg = isHeadSeg;
     }
   }
 
@@ -529,18 +529,38 @@ public class EdgeList {
    *
    * @return List of all the Edges contained in the edge lists.
    */ 
-  public static Map<byte[], List<ParsedEdge>> batchRead(
+  public static TraversalResult batchRead(
       RAMCloudTransaction rctx,
       RAMCloud client,
       long rcTableId,
-      List<byte[]> keyPrefixes,
-      boolean parseProps) {
+      Collection<Vertex> vCol,
+      String eLabel, 
+      Direction dir, 
+      boolean parseProps,
+      String ... nLabels) {
+    List<byte[]> keyPrefixes = GraphHelper.getEdgeListKeyPrefixes(vCol, eLabel, dir, nLabels);
+
     // Future read requests are appended to this queue as we figure out what we need to read. We
     // store either RAMCloudTransactionReadOps or MultiReadObjets in this queue, depending on if we
     // are executing in a transaction context or not.
     LinkedList<Object> requestQ = new LinkedList<>();
     LinkedList<MultiReadSpec> specQ = new LinkedList<>();
-    Map<byte[], List<ParsedEdge>> eListMap = new HashMap<>();
+    
+    Map<Vertex, List<Vertex>> vMap = new HashMap<>();
+    Map<Vertex, List<Map<Object, Object>>> pMap = null;
+    if (parseProps)
+      pMap = new HashMap<>();
+
+    Map<UInt128, Vertex> vDedupMap = new HashMap<>();
+    Set<Vertex> vSet = new HashSet<>();
+
+    int index = 0;
+    for (String nLabel : nLabels) {
+      for (Vertex vertex : vCol) {
+        specQ.addLast(new MultiReadSpec(keyPrefixes.get(index), vertex, nLabel, true));
+        index++;
+      }
+    }
 
     /* Add head segments to queue and prepare edgeMap. */
     for (int i = 0; i < keyPrefixes.size(); i++) {
@@ -549,8 +569,6 @@ public class EdgeList {
         requestQ.addLast(new RAMCloudTransactionReadOp(rctx, rcTableId, headSegKey, true));
       else
         requestQ.addLast(new MultiReadObject(rcTableId, headSegKey));
-
-      specQ.addLast(new MultiReadSpec(keyPrefixes.get(i), null, null, null, true));
     }
 
     /* Go through request queue and read at most DEFAULT_MAX_MULTIREAD_SIZE at a time. */
@@ -599,12 +617,19 @@ public class EdgeList {
           }
         }
 
-        List<ParsedEdge> eList;
-        if (eListMap.containsKey(spec.keyPrefix)) {
-          eList = eListMap.get(spec.keyPrefix);
+        List<Vertex> vList;
+        List<Map<Object, Object>> pList = null;
+        if (vMap.containsKey(spec.baseVertex)) {
+          vList = vMap.get(spec.baseVertex);
+          if (parseProps)
+            pList = pMap.get(spec.baseVertex);
         } else {
-          eList = new LinkedList<>();
-          eListMap.put(spec.keyPrefix, eList);
+          vList = new LinkedList<>();
+          vMap.put(spec.baseVertex, vList);
+          if (parseProps) {
+            pList = new LinkedList<>();
+            pMap.put(spec.baseVertex, pList);
+          }
         }
 
         seg.clear();
@@ -630,22 +655,33 @@ public class EdgeList {
           seg.get(neighborIdBytes);
 
           UInt128 neighborId = new UInt128(neighborIdBytes);
+          
+          Vertex nv = vDedupMap.get(neighborId);
+          if (nv != null) {
+            vList.add(nv);
+          } else {
+            Vertex v = new Vertex(neighborId, spec.neighborLabel);
+            vList.add(v);
+            vDedupMap.put(neighborId, v);
+            vSet.add(v);
+          }
 
           short propLen = seg.getShort();
 
-          Map<Object, Object> deserializedProperties = null;
-          if (parseProps && propLen > 0) {
-            deserializedProperties = (Map<Object, Object>)GraphHelper.deserializeObject(seg);
+          if (parseProps) {
+            if (propLen > 0) {
+              pList.add((Map<Object, Object>)GraphHelper.deserializeObject(seg));
+            } else {
+              pList.add(new HashMap<Object, Object>());
+            }
           } else {
             seg.position(seg.position() + propLen);
           }
-      
-          eList.add(new ParsedEdge(deserializedProperties, neighborId));
         }
       }
     }
 
-    return eListMap;
+    return new TraversalResult(vMap, pMap, vSet);
   }
 
   /**
