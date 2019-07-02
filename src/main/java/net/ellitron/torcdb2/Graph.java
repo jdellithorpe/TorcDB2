@@ -308,7 +308,7 @@ public class Graph {
       }
     }
 
-    System.out.println(String.format("graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d", vCol.size(), totalEdges, uniqNbrSet.size()));
+    System.out.println(String.format("graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d, parse properties: %b, total time: %d us", vCol.size(), totalEdges, uniqNbrSet.size(), fillEdge, (System.nanoTime() - startTime)/1000));
 
     return new TraversalResult(nbrListMap, ePropListMap, uniqNbrSet);
   }
@@ -343,6 +343,8 @@ public class Graph {
    * @param keys (Optional) set of keys to fetch.
    */
   public void fillProperties(Iterable<Vertex> vertices, String ... keys) {
+    long startTime = System.nanoTime();
+
     // Max number of reads to issue in a multiread / batch
     int DEFAULT_MAX_MULTIREAD_SIZE = 1 << 11; 
 
@@ -398,7 +400,10 @@ public class Graph {
             requests[i] = (MultiReadObject)requestQ.removeFirst();
           }
 
+          long multireadStartTime = System.nanoTime();
           client.read(requests);
+          System.out.println(String.format("graph.fillProperties(): multiread_properties: time: %d us", (System.nanoTime() - multireadStartTime)/1000));
+
         
           for (int i = 0; i < requests.length; i++) {
             v = vertexQ.removeFirst();
@@ -427,6 +432,8 @@ public class Graph {
         }
       } 
     }
+
+    System.out.println(String.format("graph.fillProperties(): total time: %d us", (System.nanoTime() - startTime)/1000));
   }
 
   /* **************************************************************************

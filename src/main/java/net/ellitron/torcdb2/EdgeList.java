@@ -578,7 +578,9 @@ public class EdgeList {
           rcobjs[i] = (RAMCloudObject)mrobjs[i];
         }
 
+        long multireadStartTime = System.nanoTime();
         client.read(mrobjs);
+        System.out.println(String.format("EdgeList.batchRead(): multiread_edgelist: time: %d us", (System.nanoTime() - multireadStartTime)/1000));
       }
 
       /* Process this batch, adding more requests to the queue if needed. */
