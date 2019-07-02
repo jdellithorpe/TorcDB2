@@ -308,7 +308,7 @@ public class Graph {
       }
     }
 
-    System.out.println(String.format("graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d, parse properties: %b, total time: %d us", vCol.size(), totalEdges, uniqNbrSet.size(), fillEdge, (System.nanoTime() - startTime)/1000));
+    System.out.println(String.format("Graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d, parse properties: %b, total time: %d us", vCol.size(), totalEdges, uniqNbrSet.size(), fillEdge, (System.nanoTime() - startTime)/1000));
 
     return new TraversalResult(nbrListMap, ePropListMap, uniqNbrSet);
   }
@@ -402,7 +402,7 @@ public class Graph {
 
           long multireadStartTime = System.nanoTime();
           client.read(requests);
-          System.out.println(String.format("graph.fillProperties(): multiread_properties: time: %d us", (System.nanoTime() - multireadStartTime)/1000));
+          System.out.println(String.format("Graph.fillProperties(): multiread_properties: time: %d us", (System.nanoTime() - multireadStartTime)/1000));
 
         
           for (int i = 0; i < requests.length; i++) {
@@ -433,7 +433,7 @@ public class Graph {
       } 
     }
 
-    System.out.println(String.format("graph.fillProperties(): total time: %d us", (System.nanoTime() - startTime)/1000));
+    System.out.println(String.format("Graph.fillProperties(): total time: %d us", (System.nanoTime() - startTime)/1000));
   }
 
   /* **************************************************************************
