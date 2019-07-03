@@ -23,6 +23,8 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.locks.*;
 
 /**
  * A collection of static methods for reading and writing edge lists to
@@ -532,12 +534,18 @@ public class EdgeList {
   public static TraversalResult batchRead(
       RAMCloudTransaction rctx,
       RAMCloud client,
+      Lock rclock,
       long rcTableId,
       Collection<Vertex> vCol,
+      int numThreads,
+      int threadId,
       String eLabel, 
       Direction dir, 
       boolean parseProps,
       String ... nLabels) {
+    long startTime = System.nanoTime();
+    long totalEdges = 0;
+
     List<byte[]> keyPrefixes = GraphHelper.getEdgeListKeyPrefixes(vCol, eLabel, dir, nLabels);
 
     // Future read requests are appended to this queue as we figure out what we need to read. We
@@ -557,18 +565,21 @@ public class EdgeList {
     int index = 0;
     for (String nLabel : nLabels) {
       for (Vertex vertex : vCol) {
-        specQ.addLast(new MultiReadSpec(keyPrefixes.get(index), vertex, nLabel, true));
+        if (index % numThreads == threadId)
+          specQ.addLast(new MultiReadSpec(keyPrefixes.get(index), vertex, nLabel, true));
         index++;
       }
     }
 
     /* Add head segments to queue and prepare edgeMap. */
     for (int i = 0; i < keyPrefixes.size(); i++) {
-      byte[] headSegKey = getSegmentKey(keyPrefixes.get(i), 0);
-      if (rctx != null)
-        requestQ.addLast(new RAMCloudTransactionReadOp(rctx, rcTableId, headSegKey, true));
-      else
-        requestQ.addLast(new MultiReadObject(rcTableId, headSegKey));
+      if (i % numThreads == threadId) {
+        byte[] headSegKey = getSegmentKey(keyPrefixes.get(i), 0);
+        if (rctx != null)
+          requestQ.addLast(new RAMCloudTransactionReadOp(rctx, rcTableId, headSegKey, true));
+        else
+          requestQ.addLast(new MultiReadObject(rcTableId, headSegKey));
+      }
     }
 
     /* Go through request queue and read at most DEFAULT_MAX_MULTIREAD_SIZE at a time. */
@@ -596,7 +607,11 @@ public class EdgeList {
           rcobjs[i] = (RAMCloudObject)mrobjs[i];
         }
 
+        long multireadStartTime = System.nanoTime();
+        rclock.lock();
         client.read(mrobjs);
+        rclock.unlock();
+        System.out.println(String.format("EdgeList.batchRead(): multiread_edgelist: time: %d us", (System.nanoTime() - multireadStartTime)/1000));
       }
 
       /* Process this batch, adding more requests to the queue if needed. */
@@ -652,10 +667,12 @@ public class EdgeList {
 
         byte[] neighborIdBytes = new byte[UInt128.BYTES];
         while (seg.hasRemaining()) {
+          totalEdges++;
+
           seg.get(neighborIdBytes);
 
           UInt128 neighborId = new UInt128(neighborIdBytes);
-          
+
           Vertex nv = vDedupMap.get(neighborId);
           if (nv != null) {
             vList.add(nv);
@@ -679,6 +696,64 @@ public class EdgeList {
           }
         }
       }
+    }
+
+    System.out.println(String.format("Graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d, parse properties: %b, total time: %d us", vCol.size(), totalEdges, vSet.size(), parseProps, (System.nanoTime() - startTime)/1000));
+
+    return new TraversalResult(vMap, pMap, vSet);
+  }
+
+  public static TraversalResult batchReadMultiThreaded(
+      RAMCloudTransaction rctx,
+      RAMCloud client,
+      long rcTableId,
+      Collection<Vertex> vCol,
+      String eLabel, 
+      Direction dir, 
+      boolean parseProps,
+      String ... nLabels) {
+    final int nThreads = 4;
+
+    ExecutorService executor = Executors.newFixedThreadPool(nThreads);
+
+    Lock rclock = new ReentrantLock();
+
+		List<Callable<TraversalResult>> callables = new ArrayList<>();
+    for (int i = 0; i < nThreads; i++) {
+      final int threadId = i;
+      callables.add(() -> {
+        return batchRead(rctx, client, rclock, rcTableId, vCol, nThreads, threadId, eLabel, dir, parseProps, nLabels);
+      });
+    }
+
+    final Map<Vertex, List<Vertex>> vMap = new HashMap<>();
+    final Map<Vertex, List<Map<Object, Object>>> pMap;
+    if (parseProps)
+      pMap = new HashMap<>();
+    else
+      pMap = null;
+
+    final Set<Vertex> vSet = new HashSet<>();
+
+    try {
+      executor.invokeAll(callables)
+        .stream()
+        .map(future -> {
+          try {
+            return future.get();
+          }
+          catch (Exception e) {
+            throw new IllegalStateException(e);
+          }
+        })
+        .forEach((tr) -> {
+          vMap.putAll(tr.vMap);
+          if (parseProps)
+            pMap.putAll(tr.pMap);
+          vSet.addAll(tr.vSet);
+        });
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
     }
 
     return new TraversalResult(vMap, pMap, vSet);

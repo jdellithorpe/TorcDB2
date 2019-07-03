@@ -242,7 +242,8 @@ public class Graph {
       Direction dir, 
       boolean fillEdge,
       String ... nLabels) {
-    return EdgeList.batchRead(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+    return EdgeList.batchReadMultiThreaded(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+//    return EdgeList.batchRead(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
   }
 
   public void fillProperties(Vertex ... vertices) {
@@ -275,6 +276,8 @@ public class Graph {
    * @param keys (Optional) set of keys to fetch.
    */
   public void fillProperties(Iterable<Vertex> vertices, String ... keys) {
+    long startTime = System.nanoTime();
+
     // Max number of reads to issue in a multiread / batch
     int DEFAULT_MAX_MULTIREAD_SIZE = 1 << 11; 
 
@@ -330,7 +333,9 @@ public class Graph {
             requests[i] = (MultiReadObject)requestQ.removeFirst();
           }
 
+          long multireadStartTime = System.nanoTime();
           client.read(requests);
+          System.out.println(String.format("Graph.fillProperties(): requests: %d, multiread_properties: time: %d us", requests.length, (System.nanoTime() - multireadStartTime)/1000));
         
           for (int i = 0; i < requests.length; i++) {
             v = vertexQ.removeFirst();
@@ -359,6 +364,8 @@ public class Graph {
         }
       } 
     }
+
+    System.out.println(String.format("Graph.fillProperties(): total time: %d us", (System.nanoTime() - startTime)/1000));
   }
 
   /* **************************************************************************
