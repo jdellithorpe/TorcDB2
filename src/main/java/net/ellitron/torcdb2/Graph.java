@@ -36,6 +36,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.*;
+import java.util.concurrent.locks.*;
 
 public class Graph {
 
@@ -49,8 +51,11 @@ public class Graph {
   /* Internal state. */
   private final RAMCloud client;                        // RAMCloud client interface.
   private RAMCloudTransaction tx;                       // Current RAMCloud tx context.
+  private final Lock rclock;                            // Lock on RAMCloud client.
   private final long vertexTableId, edgeListTableId;    // RAMCloud tableIds.
   private OutputStream vertexTableOS, edgeListTableOS;  // For writing RAMCloud image files.
+  private final ExecutorService threadPool;             // For parallel execution of tasks.
+
 
   /* **************************************************************************
    *
@@ -108,6 +113,10 @@ public class Graph {
       this.vertexTableOS = null;
       this.edgeListTableOS = null;
     }
+
+    this.rclock = new ReentrantLock();
+
+    threadPool = Executors.newFixedThreadPool(8);
   }
 
   /**
@@ -132,6 +141,22 @@ public class Graph {
         edgeListTableOS.close();
     } catch (Exception e) {
       throw new RuntimeException(e);
+    }
+
+    threadPool.shutdown(); // Disable new tasks from being submitted
+    try {
+      // Wait a while for existing tasks to terminate
+      if (!threadPool.awaitTermination(60, TimeUnit.SECONDS)) {
+        threadPool.shutdownNow(); // Cancel currently executing tasks
+        // Wait a while for tasks to respond to being cancelled
+        if (!threadPool.awaitTermination(60, TimeUnit.SECONDS))
+          System.err.println("Thread pool did not terminate");
+      }
+    } catch (InterruptedException ie) {
+      // (Re-)Cancel if current thread also interrupted
+      threadPool.shutdownNow();
+      // Preserve interrupt status
+      Thread.currentThread().interrupt();
     }
   }
 
@@ -242,8 +267,8 @@ public class Graph {
       Direction dir, 
       boolean fillEdge,
       String ... nLabels) {
-    return EdgeList.batchReadMultiThreaded(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
-//    return EdgeList.batchRead(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+    return EdgeList.batchReadMultiThreaded(threadPool, tx, client, rclock, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+//  return EdgeList.batchReadSingleThreaded(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
   }
 
   public void fillProperties(Vertex ... vertices) {
@@ -276,32 +301,28 @@ public class Graph {
    * @param keys (Optional) set of keys to fetch.
    */
   public void fillProperties(Iterable<Vertex> vertices, String ... keys) {
-    long startTime = System.nanoTime();
+    fillPropertiesSingleThreaded(vertices, keys);
+  }
 
+  private void fillPropertiesThread(
+      Iterable<Vertex> vertices, 
+      int numThreads,
+      int threadId,
+      String ... keys) {
     // Max number of reads to issue in a multiread / batch
     int DEFAULT_MAX_MULTIREAD_SIZE = 1 << 11; 
 
     Iterator<Vertex> it = vertices.iterator();
     LinkedList<Object> requestQ = new LinkedList<>();
     LinkedList<Vertex> vertexQ = new LinkedList<>();
-    while (it.hasNext()) {
-      Vertex v = it.next();
-      if (tx != null) {
-        requestQ.addLast(new RAMCloudTransactionReadOp(tx, vertexTableId, 
-              GraphHelper.getVertexPropertiesKey(v.id()), true));
-      } else {
-        requestQ.addLast(new MultiReadObject(vertexTableId, 
-              GraphHelper.getVertexPropertiesKey(v.id())));
-      }
-
-      vertexQ.addLast(v);
-
+    long count = 0;
+    while (true) {
       // If we've reached the multiread size limit or we're at the end, then issue the reads.
       if (requestQ.size() == DEFAULT_MAX_MULTIREAD_SIZE || !it.hasNext()) {
         if (tx != null) {
           while(requestQ.size() > 0) {
             RAMCloudTransactionReadOp readOp = (RAMCloudTransactionReadOp)requestQ.removeFirst();
-            v = vertexQ.removeFirst();
+            Vertex v = vertexQ.removeFirst();
 
             RAMCloudObject obj;
             try {
@@ -338,7 +359,7 @@ public class Graph {
           System.out.println(String.format("Graph.fillProperties(): requests: %d, multiread_properties: time: %d us", requests.length, (System.nanoTime() - multireadStartTime)/1000));
         
           for (int i = 0; i < requests.length; i++) {
-            v = vertexQ.removeFirst();
+            Vertex v = vertexQ.removeFirst();
 
             if (requests[i].getStatus() != Status.STATUS_OK) {
               if (requests[i].getStatus() == Status.STATUS_OBJECT_DOESNT_EXIST) {
@@ -363,6 +384,55 @@ public class Graph {
           } 
         }
       } 
+
+      if (it.hasNext()) {
+        Vertex v = it.next();
+
+        if (count % numThreads == threadId) {
+          if (tx != null) {
+            requestQ.addLast(new RAMCloudTransactionReadOp(tx, vertexTableId, 
+                  GraphHelper.getVertexPropertiesKey(v.id()), true));
+          } else {
+            requestQ.addLast(new MultiReadObject(vertexTableId, 
+                  GraphHelper.getVertexPropertiesKey(v.id())));
+          }
+
+          vertexQ.addLast(v);
+        }
+      } else {
+        break;
+      }
+
+      count++;
+    } // while (true)
+  }
+
+  public void fillPropertiesSingleThreaded(Iterable<Vertex> vertices, String ... keys) {
+    fillPropertiesThread(vertices, 1, 0, keys);
+  }
+
+  private void fillPropertiesMultiThreaded(
+      ExecutorService threadPool,
+      Iterable<Vertex> vertices, 
+      String ... keys) {
+    long startTime = System.nanoTime();
+    final int nThreads = 7;
+
+		List<Callable<Void>> callables = new ArrayList<>();
+    for (int i = 0; i < nThreads; i++) {
+      final int threadId = i;
+      callables.add(() -> {
+        fillPropertiesThread(vertices, nThreads, threadId, keys);
+        return null;
+      });
+    }
+
+    try {
+      List<Future<Void>> results = threadPool.invokeAll(callables);
+      for (Future<Void> result : results)
+        result.get();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
 
     System.out.println(String.format("Graph.fillProperties(): total time: %d us", (System.nanoTime() - startTime)/1000));

@@ -607,11 +607,20 @@ public class EdgeList {
           rcobjs[i] = (RAMCloudObject)mrobjs[i];
         }
 
-        long multireadStartTime = System.nanoTime();
-        rclock.lock();
-        client.read(mrobjs);
-        rclock.unlock();
-        System.out.println(String.format("EdgeList.batchRead(): multiread_edgelist: time: %d us", (System.nanoTime() - multireadStartTime)/1000));
+        long multireadStartTime;
+        long multireadEndTime;
+        if (rclock != null) {
+          rclock.lock();
+          multireadStartTime = System.nanoTime();
+          client.read(mrobjs);
+          multireadEndTime = System.nanoTime();
+          rclock.unlock();
+        } else {
+          multireadStartTime = System.nanoTime();
+          client.read(mrobjs);
+          multireadEndTime = System.nanoTime();
+        }
+        System.out.println(String.format("EdgeList.batchRead(): multiread_edgelist: time: %d us", (multireadEndTime - multireadStartTime)/1000));
       }
 
       /* Process this batch, adding more requests to the queue if needed. */
@@ -698,12 +707,10 @@ public class EdgeList {
       }
     }
 
-    System.out.println(String.format("Graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d, parse properties: %b, total time: %d us", vCol.size(), totalEdges, vSet.size(), parseProps, (System.nanoTime() - startTime)/1000));
-
     return new TraversalResult(vMap, pMap, vSet);
   }
 
-  public static TraversalResult batchReadMultiThreaded(
+  public static TraversalResult batchReadSingleThreaded(
       RAMCloudTransaction rctx,
       RAMCloud client,
       long rcTableId,
@@ -712,11 +719,25 @@ public class EdgeList {
       Direction dir, 
       boolean parseProps,
       String ... nLabels) {
-    final int nThreads = 4;
+    return batchRead(rctx, client, null, rcTableId, vCol, 1, 0, eLabel, dir, parseProps, nLabels);
+  }
 
-    ExecutorService executor = Executors.newFixedThreadPool(nThreads);
+  public static TraversalResult batchReadMultiThreaded(
+      ExecutorService threadPool,
+      RAMCloudTransaction rctx,
+      RAMCloud client,
+      Lock rclock,
+      long rcTableId,
+      Collection<Vertex> vCol,
+      String eLabel, 
+      Direction dir, 
+      boolean parseProps,
+      String ... nLabels) {
+    long startTime = System.nanoTime();
+    long totalEdges = 0;
 
-    Lock rclock = new ReentrantLock();
+    //final int nThreads = Math.min(1 + (vCol.size()/2048), 8);
+    final int nThreads = 7;
 
 		List<Callable<TraversalResult>> callables = new ArrayList<>();
     for (int i = 0; i < nThreads; i++) {
@@ -736,7 +757,7 @@ public class EdgeList {
     final Set<Vertex> vSet = new HashSet<>();
 
     try {
-      executor.invokeAll(callables)
+      threadPool.invokeAll(callables)
         .stream()
         .map(future -> {
           try {
@@ -755,6 +776,8 @@ public class EdgeList {
     } catch (InterruptedException e) {
       throw new RuntimeException(e);
     }
+
+    System.out.println(String.format("Graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d, parse properties: %b, total time: %d us", vCol.size(), totalEdges, vSet.size(), parseProps, (System.nanoTime() - startTime)/1000));
 
     return new TraversalResult(vMap, pMap, vSet);
   }
