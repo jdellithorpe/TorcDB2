@@ -755,25 +755,34 @@ public class EdgeList {
       pMap = null;
 
     final Set<Vertex> vSet = new HashSet<>();
+    
+    final Map<Vertex, Vertex> vSetMap = new HashMap<>();
 
     try {
-      threadPool.invokeAll(callables)
-        .stream()
-        .map(future -> {
-          try {
-            return future.get();
+      List<Future<TraversalResult>> results = threadPool.invokeAll(callables);
+      // Need to combine all the results so that the vMaps use only one reference for each unique
+      // vertex. To do this we first coalesce all the vSets
+      for (Future<TraversalResult> result : results) {
+        vMap.putAll(result.get().vMap);
+        if (parseProps)
+          pMap.putAll(result.get().pMap);
+        vSet.addAll(result.get().vSet);
+        for (Vertex v : result.get().vSet)
+          if (!vSetMap.containsKey(v))
+            vSetMap.put(v,v);
+      }
+
+      // Deduplicate references in vMaps
+      for (Future<TraversalResult> result : results) {
+        for (Vertex b : result.get().vMap.keySet()) {
+          List<Vertex> nList = result.get().vMap.get(b);
+          for (int i = 0; i < nList.size(); i++) {
+            if (nList.get(i) != vSetMap.get(nList.get(i)))
+              nList.set(i, vSetMap.get(nList.get(i)));
           }
-          catch (Exception e) {
-            throw new IllegalStateException(e);
-          }
-        })
-        .forEach((tr) -> {
-          vMap.putAll(tr.vMap);
-          if (parseProps)
-            pMap.putAll(tr.pMap);
-          vSet.addAll(tr.vSet);
-        });
-    } catch (InterruptedException e) {
+        }
+      }
+    } catch (Exception e) {
       throw new RuntimeException(e);
     }
 
