@@ -540,7 +540,7 @@ public class EdgeList {
       int numThreads,
       int threadId,
       String eLabel, 
-      Direction dir, 
+      Direction dir,
       boolean parseProps,
       String ... nLabels) {
     long startTime = System.nanoTime();
@@ -560,6 +560,7 @@ public class EdgeList {
       pMap = new HashMap<>();
 
     Map<UInt128, Vertex> vDedupMap = new HashMap<>();
+
     Set<Vertex> vSet = new HashSet<>();
 
     int index = 0;
@@ -756,12 +757,14 @@ public class EdgeList {
 
     final Set<Vertex> vSet = new HashSet<>();
     
-    final Map<Vertex, Vertex> vSetMap = new HashMap<>();
+//    final Map<Vertex, Vertex> vSetMap = new HashMap<>();
 
     long reduceStartTime = 0;
     long reduceEndTime = 0;
     long setupStartTime = 0;
     long setupEndTime = 0;
+    long vsetaddStartTime = 0;
+    long vsetaddEndTime = 0;
     try {
       List<Future<TraversalResult>> futureResults = threadPool.invokeAll(callables);
       List<TraversalResult> results = new ArrayList<>(nThreads);
@@ -777,30 +780,38 @@ public class EdgeList {
         vMap.putAll(result.vMap);
         if (parseProps)
           pMap.putAll(result.pMap);
-        vSet.addAll(result.vSet);
-        for (Vertex v : result.vSet)
-          if (!vSetMap.containsKey(v))
-            vSetMap.put(v,v);
+//        vSet.addAll(result.vSet);
+//        for (Vertex v : result.vSet)
+//          if (!vSetMap.containsKey(v))
+//            vSetMap.put(v,v);
       }
       setupEndTime = System.nanoTime();
 
+      vsetaddStartTime = System.nanoTime();
+      // Need to combine all the results so that the vMaps use only one reference for each unique
+      // vertex. To do this we first coalesce all the vSets
+      for (TraversalResult result : results) {
+        vSet.addAll(result.vSet);
+      }
+      vsetaddEndTime = System.nanoTime();
+
       reduceStartTime = System.nanoTime();
       // Deduplicate references in vMaps
-      for (TraversalResult result : results) {
-        for (Vertex b : result.vMap.keySet()) {
-          List<Vertex> nList = result.vMap.get(b);
-          for (int i = 0; i < nList.size(); i++) {
-            if (nList.get(i) != vSetMap.get(nList.get(i)))
-              nList.set(i, vSetMap.get(nList.get(i)));
-          }
-        }
-      }
+//      for (TraversalResult result : results) {
+//        for (Vertex b : result.vMap.keySet()) {
+//          List<Vertex> nList = result.vMap.get(b);
+//          for (int i = 0; i < nList.size(); i++) {
+//            if (nList.get(i) != vSetMap.get(nList.get(i)))
+//              nList.set(i, vSetMap.get(nList.get(i)));
+//          }
+//        }
+//      }
       reduceEndTime = System.nanoTime();
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
 
-    System.out.println(String.format("Graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d, parse properties: %b, total time: %d us, setup time: %d us, reduce time: %d us", vCol.size(), totalEdges, vSet.size(), parseProps, (System.nanoTime() - startTime)/1000, (setupEndTime - setupStartTime)/1000, (reduceEndTime - reduceStartTime)/1000));
+    System.out.println(String.format("Graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d, parse properties: %b, total time: %d us, setup time: %d us, vset time: %d us, reduce time: %d us", vCol.size(), totalEdges, vSet.size(), parseProps, (System.nanoTime() - startTime)/1000, (setupEndTime - setupStartTime)/1000, (vsetaddEndTime - vsetaddStartTime)/1000, (reduceEndTime - reduceStartTime)/1000));
 
     return new TraversalResult(vMap, pMap, vSet);
   }

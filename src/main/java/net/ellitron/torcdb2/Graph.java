@@ -267,20 +267,22 @@ public class Graph {
       Direction dir, 
       boolean fillEdge,
       String ... nLabels) {
-    return EdgeList.batchReadMultiThreaded(threadPool, tx, client, rclock, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
-//  return EdgeList.batchReadSingleThreaded(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+    if (tx != null)
+      return EdgeList.batchReadSingleThreaded(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+    else
+      return EdgeList.batchReadMultiThreaded(threadPool, tx, client, rclock, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
   }
 
-  public void fillProperties(Vertex ... vertices) {
+  public void getProperties(Map<Vertex, Map<Object, Object>> props, Vertex ... vertices) {
     List<Vertex> vList = new ArrayList<>(vertices.length);
     for (Vertex v : vertices)
       vList.add(v);
-    fillProperties(vList);
+    getProperties(props, vList);
   }
 
-  public void fillProperties(TraversalResult ... rs) {
+  public void getProperties(Map<Vertex, Map<Object, Object>> props, TraversalResult ... rs) {
     if (rs.length == 1) {
-      fillProperties(rs[0].vSet);
+      getProperties(props, rs[0].vSet);
     } else {
       int totalSize = 0;
       for (TraversalResult r : rs)
@@ -290,7 +292,7 @@ public class Graph {
       for (TraversalResult r : rs)
         vList.addAll(r.vSet);
 
-      fillProperties(vList);
+      getProperties(props, vList);
     }
   }
 
@@ -300,11 +302,54 @@ public class Graph {
    *
    * @param keys (Optional) set of keys to fetch.
    */
-  public void fillProperties(Iterable<Vertex> vertices, String ... keys) {
-    fillPropertiesSingleThreaded(vertices, keys);
+  public void getProperties(Map<Vertex, Map<Object, Object>> props, Iterable<Vertex> vertices, String ... keys) {
+    if (tx != null)
+      getPropertiesSingleThreaded(props, vertices, keys);
+    else
+      getPropertiesMultiThreaded(props, vertices, keys);
   }
 
-  private void fillPropertiesThread(
+  public void getPropertiesSingleThreaded(Map<Vertex, Map<Object, Object>> props, Iterable<Vertex> vertices, String ... keys) {
+    getPropertiesThread(props, vertices, 1, 0, keys);
+  }
+
+  private void getPropertiesMultiThreaded(
+      Map<Vertex, Map<Object, Object>> props, 
+      Iterable<Vertex> vertices, 
+      String ... keys) {
+    long startTime = System.nanoTime();
+    final int nThreads = 7;
+
+    List<Map<Vertex, Map<Object, Object>>> threadPropList = new ArrayList<>(nThreads); 
+		List<Callable<Void>> callables = new ArrayList<>();
+    for (int i = 0; i < nThreads; i++) {
+      final int threadId = i;
+      final Map<Vertex, Map<Object, Object>> threadProps = new HashMap<>();
+      callables.add(() -> {
+        getPropertiesThread(threadProps, vertices, nThreads, threadId, keys);
+        return null;
+      });
+      threadPropList.add(threadProps);
+    }
+
+    try {
+      List<Future<Void>> results = threadPool.invokeAll(callables);
+      
+      for (Future<Void> result : results)
+        result.get();
+    
+      for (Map<Vertex, Map<Object, Object>> threadProps : threadPropList)
+        props.putAll(threadProps);
+
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+
+    System.out.println(String.format("Graph.getProperties(): total time: %d us", (System.nanoTime() - startTime)/1000));
+  }
+
+  private void getPropertiesThread(
+      Map<Vertex, Map<Object, Object>> props, 
       Iterable<Vertex> vertices, 
       int numThreads,
       int threadId,
@@ -329,7 +374,7 @@ public class Graph {
               obj = readOp.getValue();
               if (obj == null) {
                 // This vertex has no properties set.
-                v.setProperties(new HashMap<>());
+                props.put(v, new HashMap<>());
                 continue;
               }
             } catch (ClientException e) {
@@ -346,7 +391,7 @@ public class Graph {
               properties = minimap;
             }
 
-            v.setProperties(properties);
+            props.put(v, properties);
           }
         } else {
           MultiReadObject[] requests = new MultiReadObject[requestQ.size()];
@@ -354,9 +399,12 @@ public class Graph {
             requests[i] = (MultiReadObject)requestQ.removeFirst();
           }
 
+          rclock.lock();
           long multireadStartTime = System.nanoTime();
           client.read(requests);
-          System.out.println(String.format("Graph.fillProperties(): requests: %d, multiread_properties: time: %d us", requests.length, (System.nanoTime() - multireadStartTime)/1000));
+          long multireadEndTime = System.nanoTime();
+          rclock.unlock();
+          System.out.println(String.format("Graph.getProperties(): requests: %d, multiread_properties: time: %d us", requests.length, (multireadEndTime - multireadStartTime)/1000));
         
           for (int i = 0; i < requests.length; i++) {
             Vertex v = vertexQ.removeFirst();
@@ -364,7 +412,7 @@ public class Graph {
             if (requests[i].getStatus() != Status.STATUS_OK) {
               if (requests[i].getStatus() == Status.STATUS_OBJECT_DOESNT_EXIST) {
                 // This vertex has no properties set.
-                v.setProperties(new HashMap<>());
+                props.put(v, new HashMap<>());
                 continue;
               } else {
                 throw new RuntimeException("Vertex properties RAMCloud object had status " + 
@@ -380,7 +428,7 @@ public class Graph {
               properties = minimap;
             }
 
-            v.setProperties(properties);
+            props.put(v, properties);
           } 
         }
       } 
@@ -407,37 +455,6 @@ public class Graph {
     } // while (true)
   }
 
-  public void fillPropertiesSingleThreaded(Iterable<Vertex> vertices, String ... keys) {
-    fillPropertiesThread(vertices, 1, 0, keys);
-  }
-
-  private void fillPropertiesMultiThreaded(
-      ExecutorService threadPool,
-      Iterable<Vertex> vertices, 
-      String ... keys) {
-    long startTime = System.nanoTime();
-    final int nThreads = 7;
-
-		List<Callable<Void>> callables = new ArrayList<>();
-    for (int i = 0; i < nThreads; i++) {
-      final int threadId = i;
-      callables.add(() -> {
-        fillPropertiesThread(vertices, nThreads, threadId, keys);
-        return null;
-      });
-    }
-
-    try {
-      List<Future<Void>> results = threadPool.invokeAll(callables);
-      for (Future<Void> result : results)
-        result.get();
-    } catch (Exception e) {
-      throw new RuntimeException(e);
-    }
-
-    System.out.println(String.format("Graph.fillProperties(): total time: %d us", (System.nanoTime() - startTime)/1000));
-  }
-
   /* **************************************************************************
    *
    * Graph Update Operations.
@@ -450,11 +467,11 @@ public class Graph {
    *
    * @param v Vertex to add (create or update).
    */
-  public void addVertex(Vertex v) {
-    if (v.getProperties() == null)
-      v.setProperties(new HashMap<>(0));
+  public void addVertex(Vertex v, Map<Object, Object> properties) {
+    if (properties == null)
+      properties = new HashMap<>(0);
 
-    byte[] serializedProps = GraphHelper.serializeObject(v.getProperties());
+    byte[] serializedProps = GraphHelper.serializeObject(properties);
     byte[] propKeyByteArray = GraphHelper.getVertexPropertiesKey(v.id());
 
     if (tx != null)
@@ -516,9 +533,9 @@ public class Graph {
    * 
    * @param v Vertex to write to RAMCloud image file.
    */
-  public void loadVertex(final Vertex v) {
+  public void loadVertex(final Vertex v, final Map<Object, Object> properties) {
     byte[] key = GraphHelper.getVertexPropertiesKey(v.id());
-    byte[] value = GraphHelper.serializeObject(v.getProperties());
+    byte[] value = GraphHelper.serializeObject(properties);
 
     ByteBuffer buffer = ByteBuffer.allocate(
         Integer.BYTES +

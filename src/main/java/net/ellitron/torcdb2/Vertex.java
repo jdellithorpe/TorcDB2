@@ -29,16 +29,10 @@ import java.util.List;
 public class Vertex {
   private UInt128 id;
   private String label;
-  private Map<Object, Object> props = null;
 
   public Vertex(final UInt128 id, final String label) {
-    this(id, label, null);
-  }
-
-  public Vertex(final UInt128 id, final String label, Map<Object, Object> props) {
     this.id = id;
     this.label = label;
-    this.props = props;
   }
 
   public UInt128 id() {
@@ -47,18 +41,6 @@ public class Vertex {
 
   public String label() {
     return label;
-  }
-
-  public Object getProperty(String key) {
-    return props.get(key);
-  }
-
-  public Map<Object, Object> getProperties() {
-    return props;
-  }
-
-  public void setProperties(Map<Object, Object> props) {
-    this.props = props;
   }
 
   /**
@@ -88,5 +70,4 @@ public class Vertex {
   public String toString() {
     return id.toString();
   }
-
 }
