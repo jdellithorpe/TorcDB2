@@ -267,10 +267,22 @@ public class Graph {
       Direction dir, 
       boolean fillEdge,
       String ... nLabels) {
+    long startTime = System.nanoTime();
+
+    TraversalResult result;
     if (tx != null)
-      return EdgeList.batchReadSingleThreaded(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+      result = EdgeList.batchReadSingleThreaded(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
     else
-      return EdgeList.batchReadMultiThreaded(threadPool, tx, client, rclock, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+      result = EdgeList.batchReadMultiThreaded(threadPool, tx, client, rclock, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+
+    long endTime = System.nanoTime();
+
+    System.out.println(String.format(
+          "{\"tag\": \"Graph.traverse()\", "
+          + "\"time\": %d}", 
+          (endTime - startTime)/1000));
+
+    return result;
   }
 
   public void getProperties(Map<Vertex, Map<Object, Object>> props, Vertex ... vertices) {
@@ -300,25 +312,44 @@ public class Graph {
    * Read in the properties of all the given vertices. If specific keys are specified, may perform
    * space saving optimizations to store only that key or keys.
    *
+   * @param props An OUT parameter that gets filled with the properties of the given vertices.
+   * @param vertices The set of vertices to fetch properties for.
    * @param keys (Optional) set of keys to fetch.
    */
-  public void getProperties(Map<Vertex, Map<Object, Object>> props, Iterable<Vertex> vertices, String ... keys) {
+  public void getProperties(Map<Vertex, Map<Object, Object>> props, Collection<Vertex> vertices, String ... keys) {
+    long startTime = System.nanoTime();
+
     if (tx != null)
       getPropertiesSingleThreaded(props, vertices, keys);
     else
       getPropertiesMultiThreaded(props, vertices, keys);
+    
+    long endTime = System.nanoTime();
+
+    System.out.println(String.format(
+          "{\"tag\": \"Graph.getProperties()\", "
+          + "\"vertices\": %d, "
+          + "\"time\": %d}",
+          vertices.size(),
+          (endTime - startTime)/1000));
   }
 
-  public void getPropertiesSingleThreaded(Map<Vertex, Map<Object, Object>> props, Iterable<Vertex> vertices, String ... keys) {
+  public void getPropertiesSingleThreaded(Map<Vertex, Map<Object, Object>> props, Collection<Vertex> vertices, String ... keys) {
     getPropertiesThread(props, vertices, 1, 0, keys);
   }
 
   private void getPropertiesMultiThreaded(
       Map<Vertex, Map<Object, Object>> props, 
-      Iterable<Vertex> vertices, 
+      Collection<Vertex> vertices, 
       String ... keys) {
     long startTime = System.nanoTime();
-    final int nThreads = 7;
+    long invokeTime = 0;
+    long threadExecutionTime = 0;
+    long reduceTime = 0;
+
+    final int nThreads = 3;
+
+    long invokeStartTime = System.nanoTime();
 
     List<Map<Vertex, Map<Object, Object>>> threadPropList = new ArrayList<>(nThreads); 
 		List<Callable<Void>> callables = new ArrayList<>();
@@ -334,26 +365,47 @@ public class Graph {
 
     try {
       List<Future<Void>> results = threadPool.invokeAll(callables);
-      
+      invokeTime = System.nanoTime() - invokeStartTime;
+       
+      long threadStartTime = System.nanoTime(); 
       for (Future<Void> result : results)
         result.get();
-    
+      threadExecutionTime = System.nanoTime() - threadStartTime;
+   
+      long reduceStartTime = System.nanoTime(); 
       for (Map<Vertex, Map<Object, Object>> threadProps : threadPropList)
         props.putAll(threadProps);
-
+      reduceTime = System.nanoTime() - reduceStartTime;
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
 
-    System.out.println(String.format("Graph.getProperties(): total time: %d us", (System.nanoTime() - startTime)/1000));
+    long endTime = System.nanoTime();
+
+    System.out.println(String.format(
+          "{\"tag\": \"Graph.getPropertiesMultiThreaded()\", "
+          + "\"invokeTime\": %d, "
+          + "\"threadExecutionTime\": %d, "
+          + "\"reduceTime\": %d, "
+          + "\"time\": %d}",
+          invokeTime/1000,
+          threadExecutionTime/1000,
+          reduceTime/1000,
+          (endTime - startTime)/1000));
   }
 
   private void getPropertiesThread(
       Map<Vertex, Map<Object, Object>> props, 
-      Iterable<Vertex> vertices, 
+      Collection<Vertex> vertices, 
       int numThreads,
       int threadId,
       String ... keys) {
+    long startTime = System.nanoTime();
+    long totalReadTime = 0;
+    long totalLockWaitTime = 0;
+    long totalRequests = 0;
+    long totalDeserializationTime = 0;
+
     // Max number of reads to issue in a multiread / batch
     int DEFAULT_MAX_MULTIREAD_SIZE = 1 << 11; 
 
@@ -399,13 +451,17 @@ public class Graph {
             requests[i] = (MultiReadObject)requestQ.removeFirst();
           }
 
+          long lockStartTime = System.nanoTime();
           rclock.lock();
           long multireadStartTime = System.nanoTime();
           client.read(requests);
           long multireadEndTime = System.nanoTime();
           rclock.unlock();
-          System.out.println(String.format("Graph.getProperties(): requests: %d, multiread_properties: time: %d us", requests.length, (multireadEndTime - multireadStartTime)/1000));
-        
+          long lockEndTime = System.nanoTime();
+          totalReadTime += multireadEndTime - multireadStartTime;
+          totalLockWaitTime += lockEndTime - lockStartTime;
+          totalRequests += requests.length;
+
           for (int i = 0; i < requests.length; i++) {
             Vertex v = vertexQ.removeFirst();
 
@@ -420,8 +476,12 @@ public class Graph {
               }
             }
 
+            long deserStartTime = System.nanoTime();
             Map<Object, Object> properties = (Map<Object, Object>)
               GraphHelper.deserializeObject(requests[i].getValueBytes());
+            long deserEndTime = System.nanoTime();
+            totalDeserializationTime += deserEndTime - deserStartTime;
+
             if (keys.length == 1) {
               Map<Object, Object> minimap = new ArrayMap<>(1);
               minimap.put(keys[0], properties.get(keys[0]));
@@ -453,6 +513,36 @@ public class Graph {
 
       count++;
     } // while (true)
+
+    long endTime = System.nanoTime();
+
+    if (totalLockWaitTime == 0)
+      totalLockWaitTime = totalReadTime;
+
+    System.out.println(String.format(
+          "{\"tag\": \"Graph.getPropertiesThread()\", "
+          + "\"numThreads\": %d, "
+          + "\"threadId\": %d, "
+          + "\"totalRequests\": %d, "
+          + "\"totalReadTime\": %d, "
+          + "\"totalLockWaitTime\": %d, "
+          + "\"totalDeserializationTime\": %d, "
+          + "\"avgDeserTimePerProp\": %.3f, "
+          + "\"totalTime\": %d, "
+          + "\"percentTimeRead\": %.2f, "
+          + "\"percentTimeLockWait\": %.2f, "
+          + "\"percentTimeDeser\": %.2f}",
+          numThreads,
+          threadId,
+          totalRequests,
+          totalReadTime/1000,
+          (totalLockWaitTime/1000) - (totalReadTime/1000),
+          totalDeserializationTime/1000,
+          (double)totalDeserializationTime/(double)totalRequests/1000.0,
+          (endTime - startTime)/1000,
+          (double)totalReadTime/(double)(endTime - startTime),
+          (double)(totalLockWaitTime - totalReadTime)/(double)(endTime - startTime),
+          (double)totalDeserializationTime/(double)(endTime - startTime)));
   }
 
   /* **************************************************************************

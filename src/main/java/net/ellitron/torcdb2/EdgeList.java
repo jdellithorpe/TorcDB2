@@ -517,6 +517,93 @@ public class EdgeList {
     }
   }
 
+  public static TraversalResult batchReadSingleThreaded(
+      RAMCloudTransaction rctx,
+      RAMCloud client,
+      long rcTableId,
+      Collection<Vertex> vCol,
+      String eLabel, 
+      Direction dir, 
+      boolean parseProps,
+      String ... nLabels) {
+    return batchReadThread(rctx, client, null, rcTableId, vCol, 1, 0, eLabel, dir, parseProps, nLabels);
+  }
+
+  public static TraversalResult batchReadMultiThreaded(
+      ExecutorService threadPool,
+      RAMCloudTransaction rctx,
+      RAMCloud client,
+      Lock rclock,
+      long rcTableId,
+      Collection<Vertex> vCol,
+      String eLabel, 
+      Direction dir, 
+      boolean parseProps,
+      String ... nLabels) {
+    long startTime = System.nanoTime();
+    long invokeTime = 0;
+    long threadExecutionTime = 0;
+    long reduceTime = 0;
+
+    final int nThreads = 7;
+
+    long invokeStartTime = System.nanoTime();
+
+		List<Callable<TraversalResult>> callables = new ArrayList<>();
+    for (int i = 0; i < nThreads; i++) {
+      final int threadId = i;
+      callables.add(() -> {
+        return batchReadThread(rctx, client, rclock, rcTableId, vCol, nThreads, threadId, eLabel, dir, parseProps, nLabels);
+      });
+    }
+
+    final Map<Vertex, List<Vertex>> vMap = new HashMap<>();
+    final Map<Vertex, List<Map<Object, Object>>> pMap;
+    if (parseProps)
+      pMap = new HashMap<>();
+    else
+      pMap = null;
+    final Set<Vertex> vSet = new HashSet<>();
+    
+    try {
+      List<Future<TraversalResult>> futureResults = threadPool.invokeAll(callables);
+      invokeTime = System.nanoTime() - invokeStartTime;
+
+      long threadStartTime = System.nanoTime(); 
+      List<TraversalResult> results = new ArrayList<>(nThreads);
+      for (Future<TraversalResult> futureResult : futureResults) {
+        results.add(futureResult.get());
+      }
+      threadExecutionTime = System.nanoTime() - threadStartTime;
+
+      long reduceStartTime = System.nanoTime(); 
+      for (TraversalResult result : results) {
+        vMap.putAll(result.vMap);
+        if (parseProps)
+          pMap.putAll(result.pMap);
+        vSet.addAll(result.vSet);
+      }
+      reduceTime = System.nanoTime() - reduceStartTime;
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+
+    long endTime = System.nanoTime();
+
+    System.out.println(String.format(
+          "{\"tag\": \"EdgeList.batchReadMultiThreaded()\", "
+          + "\"invokeTime\": %d, "
+          + "\"threadExecutionTime\": %d, "
+          + "\"reduceTime\": %d, "
+          + "\"time\": %d}",
+          invokeTime/1000,
+          threadExecutionTime/1000,
+          reduceTime/1000,
+          (endTime - startTime)/1000));
+
+    return new TraversalResult(vMap, pMap, vSet);
+  }
+
   /**
    * Batch reads in parallel all of the edges for all the given vertices.
    *
@@ -531,7 +618,7 @@ public class EdgeList {
    *
    * @return List of all the Edges contained in the edge lists.
    */ 
-  public static TraversalResult batchRead(
+  public static TraversalResult batchReadThread(
       RAMCloudTransaction rctx,
       RAMCloud client,
       Lock rclock,
@@ -544,6 +631,10 @@ public class EdgeList {
       boolean parseProps,
       String ... nLabels) {
     long startTime = System.nanoTime();
+    long totalReadTime = 0;
+    long totalLockWaitTime = 0;
+    long totalRequests = 0;
+    long totalDeserializationTime = 0;
     long totalEdges = 0;
 
     List<byte[]> keyPrefixes = GraphHelper.getEdgeListKeyPrefixes(vCol, eLabel, dir, nLabels);
@@ -610,19 +701,27 @@ public class EdgeList {
 
         long multireadStartTime;
         long multireadEndTime;
+        long lockStartTime = 0;
+        long lockEndTime = 0;
         if (rclock != null) {
+          lockStartTime = System.nanoTime();
           rclock.lock();
           multireadStartTime = System.nanoTime();
           client.read(mrobjs);
           multireadEndTime = System.nanoTime();
           rclock.unlock();
+          lockEndTime = System.nanoTime();
         } else {
           multireadStartTime = System.nanoTime();
           client.read(mrobjs);
           multireadEndTime = System.nanoTime();
         }
-        System.out.println(String.format("EdgeList.batchRead(): multiread_edgelist: time: %d us", (multireadEndTime - multireadStartTime)/1000));
+        totalReadTime += multireadEndTime - multireadStartTime;
+        totalLockWaitTime += lockEndTime - lockStartTime;
+        totalRequests += mrobjs.length;
       }
+
+      long deserStartTime = System.nanoTime();
 
       /* Process this batch, adding more requests to the queue if needed. */
       for (int i = 0; i < batchSize; i++) {
@@ -706,112 +805,45 @@ public class EdgeList {
           }
         }
       }
+      long deserEndTime = System.nanoTime();
+      totalDeserializationTime += deserEndTime - deserStartTime;
     }
 
-    return new TraversalResult(vMap, pMap, vSet);
-  }
+    long endTime = System.nanoTime();
 
-  public static TraversalResult batchReadSingleThreaded(
-      RAMCloudTransaction rctx,
-      RAMCloud client,
-      long rcTableId,
-      Collection<Vertex> vCol,
-      String eLabel, 
-      Direction dir, 
-      boolean parseProps,
-      String ... nLabels) {
-    return batchRead(rctx, client, null, rcTableId, vCol, 1, 0, eLabel, dir, parseProps, nLabels);
-  }
+    if (totalLockWaitTime == 0)
+      totalLockWaitTime = totalReadTime;
 
-  public static TraversalResult batchReadMultiThreaded(
-      ExecutorService threadPool,
-      RAMCloudTransaction rctx,
-      RAMCloud client,
-      Lock rclock,
-      long rcTableId,
-      Collection<Vertex> vCol,
-      String eLabel, 
-      Direction dir, 
-      boolean parseProps,
-      String ... nLabels) {
-    long startTime = System.nanoTime();
-    long totalEdges = 0;
-
-    //final int nThreads = Math.min(1 + (vCol.size()/2048), 8);
-    final int nThreads = 7;
-
-		List<Callable<TraversalResult>> callables = new ArrayList<>();
-    for (int i = 0; i < nThreads; i++) {
-      final int threadId = i;
-      callables.add(() -> {
-        return batchRead(rctx, client, rclock, rcTableId, vCol, nThreads, threadId, eLabel, dir, parseProps, nLabels);
-      });
-    }
-
-    final Map<Vertex, List<Vertex>> vMap = new HashMap<>();
-    final Map<Vertex, List<Map<Object, Object>>> pMap;
-    if (parseProps)
-      pMap = new HashMap<>();
-    else
-      pMap = null;
-
-    final Set<Vertex> vSet = new HashSet<>();
-    
-//    final Map<Vertex, Vertex> vSetMap = new HashMap<>();
-
-    long reduceStartTime = 0;
-    long reduceEndTime = 0;
-    long setupStartTime = 0;
-    long setupEndTime = 0;
-    long vsetaddStartTime = 0;
-    long vsetaddEndTime = 0;
-    try {
-      List<Future<TraversalResult>> futureResults = threadPool.invokeAll(callables);
-      List<TraversalResult> results = new ArrayList<>(nThreads);
-
-      for (Future<TraversalResult> futureResult : futureResults) {
-        results.add(futureResult.get());
-      }
-
-      setupStartTime = System.nanoTime();
-      // Need to combine all the results so that the vMaps use only one reference for each unique
-      // vertex. To do this we first coalesce all the vSets
-      for (TraversalResult result : results) {
-        vMap.putAll(result.vMap);
-        if (parseProps)
-          pMap.putAll(result.pMap);
-//        vSet.addAll(result.vSet);
-//        for (Vertex v : result.vSet)
-//          if (!vSetMap.containsKey(v))
-//            vSetMap.put(v,v);
-      }
-      setupEndTime = System.nanoTime();
-
-      vsetaddStartTime = System.nanoTime();
-      // Need to combine all the results so that the vMaps use only one reference for each unique
-      // vertex. To do this we first coalesce all the vSets
-      for (TraversalResult result : results) {
-        vSet.addAll(result.vSet);
-      }
-      vsetaddEndTime = System.nanoTime();
-
-      reduceStartTime = System.nanoTime();
-      // Deduplicate references in vMaps
-//      for (TraversalResult result : results) {
-//        for (Vertex b : result.vMap.keySet()) {
-//          List<Vertex> nList = result.vMap.get(b);
-//          for (int i = 0; i < nList.size(); i++) {
-//            if (nList.get(i) != vSetMap.get(nList.get(i)))
-//              nList.set(i, vSetMap.get(nList.get(i)));
-//          }
-//        }
-//      }
-      reduceEndTime = System.nanoTime();
-    } catch (Exception e) {
-      throw new RuntimeException(e);
-    }
-
-    System.out.println(String.format("Graph.traverse(): base vertices: %d, total edges: %d, unique neighbors: %d, parse properties: %b, total time: %d us, setup time: %d us, vset time: %d us, reduce time: %d us", vCol.size(), totalEdges, vSet.size(), parseProps, (System.nanoTime() - startTime)/1000, (setupEndTime - setupStartTime)/1000, (vsetaddEndTime - vsetaddStartTime)/1000, (reduceEndTime - reduceStartTime)/1000));
+    System.out.println(String.format(
+          "{\"tag\": \"EdgeList.batchReadThread()\", "
+          + "\"numThreads\": %d, "
+          + "\"threadId\": %d, "
+          + "\"totalRequests\": %d, "
+          + "\"totalReadTime\": %d, "
+          + "\"totalLockWaitTime\": %d, "
+          + "\"totalDeserializationTime\": %d, "
+          + "\"totalEdges\": %d, "
+          + "\"parseProps\": %s, "
+          + "\"avgDeserTimePerEdge\": %.3f, "
+          + "\"avgDeserTimePerSeg\": %.3f, "
+          + "\"totalTime\": %d, "
+          + "\"percentTimeRead\": %.2f, "
+          + "\"percentTimeLockWait\": %.2f, "
+          + "\"percentTimeDeser\": %.2f}",
+          numThreads,
+          threadId,
+          totalRequests,
+          totalReadTime/1000,
+          (totalLockWaitTime/1000) - (totalReadTime/1000),
+          totalDeserializationTime/1000,
+          totalEdges,
+          parseProps,
+          (double)totalDeserializationTime/(double)totalEdges/1000.0,
+          (double)totalDeserializationTime/(double)totalRequests/1000.0,
+          (endTime - startTime)/1000,
+          (double)totalReadTime/(double)(endTime - startTime),
+          (double)(totalLockWaitTime - totalReadTime)/(double)(endTime - startTime),
+          (double)totalDeserializationTime/(double)(endTime - startTime)));
 
     return new TraversalResult(vMap, pMap, vSet);
   }
