@@ -277,10 +277,10 @@ public class Graph {
 
     long endTime = System.nanoTime();
 
-    System.out.println(String.format(
-          "{\"tag\": \"Graph.traverse()\", "
-          + "\"time\": %d}", 
-          (endTime - startTime)/1000));
+//    System.out.println(String.format(
+//          "{\"tag\": \"Graph.traverse()\", "
+//          + "\"time\": %d}", 
+//          (endTime - startTime)/1000));
 
     return result;
   }
@@ -326,12 +326,12 @@ public class Graph {
     
     long endTime = System.nanoTime();
 
-    System.out.println(String.format(
-          "{\"tag\": \"Graph.getProperties()\", "
-          + "\"vertices\": %d, "
-          + "\"time\": %d}",
-          vertices.size(),
-          (endTime - startTime)/1000));
+//    System.out.println(String.format(
+//          "{\"tag\": \"Graph.getProperties()\", "
+//          + "\"vertices\": %d, "
+//          + "\"time\": %d}",
+//          vertices.size(),
+//          (endTime - startTime)/1000));
   }
 
   public void getPropertiesSingleThreaded(Map<Vertex, Map<Object, Object>> props, Collection<Vertex> vertices, String ... keys) {
@@ -382,16 +382,16 @@ public class Graph {
 
     long endTime = System.nanoTime();
 
-    System.out.println(String.format(
-          "{\"tag\": \"Graph.getPropertiesMultiThreaded()\", "
-          + "\"invokeTime\": %d, "
-          + "\"threadExecutionTime\": %d, "
-          + "\"reduceTime\": %d, "
-          + "\"time\": %d}",
-          invokeTime/1000,
-          threadExecutionTime/1000,
-          reduceTime/1000,
-          (endTime - startTime)/1000));
+//    System.out.println(String.format(
+//          "{\"tag\": \"Graph.getPropertiesMultiThreaded()\", "
+//          + "\"invokeTime\": %d, "
+//          + "\"threadExecutionTime\": %d, "
+//          + "\"reduceTime\": %d, "
+//          + "\"time\": %d}",
+//          invokeTime/1000,
+//          threadExecutionTime/1000,
+//          reduceTime/1000,
+//          (endTime - startTime)/1000));
   }
 
   private void getPropertiesThread(
@@ -519,30 +519,30 @@ public class Graph {
     if (totalLockWaitTime == 0)
       totalLockWaitTime = totalReadTime;
 
-    System.out.println(String.format(
-          "{\"tag\": \"Graph.getPropertiesThread()\", "
-          + "\"numThreads\": %d, "
-          + "\"threadId\": %d, "
-          + "\"totalRequests\": %d, "
-          + "\"totalReadTime\": %d, "
-          + "\"totalLockWaitTime\": %d, "
-          + "\"totalDeserializationTime\": %d, "
-          + "\"avgDeserTimePerProp\": %.3f, "
-          + "\"totalTime\": %d, "
-          + "\"percentTimeRead\": %.2f, "
-          + "\"percentTimeLockWait\": %.2f, "
-          + "\"percentTimeDeser\": %.2f}",
-          numThreads,
-          threadId,
-          totalRequests,
-          totalReadTime/1000,
-          (totalLockWaitTime/1000) - (totalReadTime/1000),
-          totalDeserializationTime/1000,
-          (double)totalDeserializationTime/(double)totalRequests/1000.0,
-          (endTime - startTime)/1000,
-          (double)totalReadTime/(double)(endTime - startTime),
-          (double)(totalLockWaitTime - totalReadTime)/(double)(endTime - startTime),
-          (double)totalDeserializationTime/(double)(endTime - startTime)));
+//    System.out.println(String.format(
+//          "{\"tag\": \"Graph.getPropertiesThread()\", "
+//          + "\"numThreads\": %d, "
+//          + "\"threadId\": %d, "
+//          + "\"totalRequests\": %d, "
+//          + "\"totalReadTime\": %d, "
+//          + "\"totalLockWaitTime\": %d, "
+//          + "\"totalDeserializationTime\": %d, "
+//          + "\"avgDeserTimePerProp\": %.3f, "
+//          + "\"totalTime\": %d, "
+//          + "\"percentTimeRead\": %.2f, "
+//          + "\"percentTimeLockWait\": %.2f, "
+//          + "\"percentTimeDeser\": %.2f}",
+//          numThreads,
+//          threadId,
+//          totalRequests,
+//          totalReadTime/1000,
+//          (totalLockWaitTime/1000) - (totalReadTime/1000),
+//          totalDeserializationTime/1000,
+//          (double)totalDeserializationTime/(double)totalRequests/1000.0,
+//          (endTime - startTime)/1000,
+//          (double)totalReadTime/(double)(endTime - startTime),
+//          (double)(totalLockWaitTime - totalReadTime)/(double)(endTime - startTime),
+//          (double)totalDeserializationTime/(double)(endTime - startTime)));
   }
 
   /* **************************************************************************
