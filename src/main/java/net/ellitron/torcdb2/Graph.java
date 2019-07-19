@@ -681,4 +681,12 @@ public class Graph {
   public RAMCloud getClient() {
     return client;
   }
+
+  public long getEdgeListTableId() {
+    return edgeListTableId;
+  }
+
+  public long getVertexTableId() {
+    return vertexTableId;
+  }
 }
