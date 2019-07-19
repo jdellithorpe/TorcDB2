@@ -137,7 +137,7 @@ public class PerfUtil {
         Graph graph = new Graph(config);
         String edgeLabel = "knows";
         Direction direction = Direction.OUT;
-        int sizes[] = {8192,4096,2048,1024,512,256,128,64};
+        int sizes[] = {8192,4096,2048,1024+512,1024,512+256,512,256+128,256,128+64,128,64+32,64};
 
         // WarmUp
         {
@@ -158,6 +158,7 @@ public class PerfUtil {
           }
         }
 
+        System.out.print(String.format("numElements,segSize,prepend50th,read50th\n"));
         for (int i = 0; i < sizes.length; i++) {
           Vertex baseVertex = new Vertex(new UInt128(0,i), "Person");
           Vertex neigVertex = new Vertex(new UInt128(0,0), "Person");
@@ -165,7 +166,7 @@ public class PerfUtil {
                   neigVertex.label());
 
           int size = sizes[i];
-          int numElements = 10000;
+          int numElements = 1000;
           Long[] writeLatency = new Long[numElements];
           for (int j = 0; j < numElements; j++) {
             long startTime = System.nanoTime();
@@ -210,7 +211,9 @@ public class PerfUtil {
           int p95 = (int) (0.95 * (float) readLatency.length);
           int p99 = (int) (0.99 * (float) readLatency.length);
 
-          System.out.println(String.format("%d, %d\n", 
+          System.out.print(String.format("%d, %d, %d, %d\n", 
+                numElements,
+                size,
                 writeLatency[(int) (0.50 * (float) writeLatency.length)]/1000, 
                 readLatency[(int) (0.50 * (float) readLatency.length)]/1000));
         }
