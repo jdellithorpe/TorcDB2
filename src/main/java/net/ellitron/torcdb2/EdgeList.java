@@ -99,7 +99,7 @@ public class EdgeList {
    * is too small, then operations like reading all of the edges in the list will require reading
    * many RAMCloud objects and incur high read overhead.
    */
-  private static final int DEFAULT_SEGMENT_SIZE_LIMIT = 1 << 11;
+  private static final int DEFAULT_SEGMENT_SIZE_LIMIT = 1 << 13;
 
   /*
    * When a RAMCloud object exceeds its size limit (DEFAULT_SEGMENT_SIZE_LIMIT), the object is
