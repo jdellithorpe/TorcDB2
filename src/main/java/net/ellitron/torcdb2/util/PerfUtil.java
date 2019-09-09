@@ -54,7 +54,7 @@ public class PerfUtil {
       "PerfUtil: A utility for running microbenchmarks on TorcDB2"
       + "\n"
       + "Usage:\n"
-      + "  PerfUtil [options] edgetest\n"
+      + "  PerfUtil [options] edge_rdwr\n"
       + "  PerfUtil (-h | --help)\n"
       + "  PerfUtil --version\n"
       + "\n"
@@ -133,7 +133,7 @@ public class PerfUtil {
 
       String cmdstring = (String) opts.get("cmdstring");
 
-      if ((Boolean) opts.get("edgetest")) {
+      if ((Boolean) opts.get("edge_rdwr")) {
         Graph graph = new Graph(config);
         String edgeLabel = "knows";
         Direction direction = Direction.OUT;
