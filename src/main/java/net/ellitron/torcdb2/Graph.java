@@ -160,6 +160,21 @@ public class Graph {
     }
   }
 
+  /**
+   * Delete the database.
+   *
+   * Removes all data representing this graph from RAMCloud. Use should call 
+   * close on the database after a call to delete. Calls to any other method
+   * after a delete operation are undefined.
+   */
+  public void delete() {
+    if (tx != null)
+      abortTx();
+
+    client.dropTable(graphName + "_vertexTable");
+    client.dropTable(graphName + "_edgeListTable");
+  }
+
   /* **************************************************************************
    *
    * Transactions Control
@@ -273,7 +288,9 @@ public class Graph {
     if (tx != null)
       result = EdgeList.batchReadSingleThreaded(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
     else
-      result = EdgeList.batchReadMultiThreaded(threadPool, tx, client, rclock, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+      // Use single threaded for now.
+      result = EdgeList.batchReadSingleThreaded(tx, client, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
+      //result = EdgeList.batchReadMultiThreaded(threadPool, tx, client, rclock, edgeListTableId, vCol, eLabel, dir, fillEdge, nLabels);
 
     long endTime = System.nanoTime();
 
@@ -322,7 +339,9 @@ public class Graph {
     if (tx != null)
       getPropertiesSingleThreaded(props, vertices, keys);
     else
-      getPropertiesMultiThreaded(props, vertices, keys);
+      // Use single threaded for now.
+      getPropertiesSingleThreaded(props, vertices, keys);
+      //getPropertiesMultiThreaded(props, vertices, keys);
     
     long endTime = System.nanoTime();
 
