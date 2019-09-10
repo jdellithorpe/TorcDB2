@@ -77,6 +77,39 @@ public class PerfUtil {
       + "  --version            Show version.\n"
       + "\n";
 
+  /** 
+   * Returns a range of numbers based on the given parameters.
+   *
+   * @param start - Start of the range
+   * @param end - End of the range
+   * @param points - Number of points in the range
+   * @param mode - Progression type of the range (linear or geometric)
+   *
+   * @return List of numbers representing the range.
+   */
+  public static List<Long> range(long start, long end, long points, String mode) {
+    List<Long> range = new ArrayList<>();
+
+    if (points > 1)
+      if (mode.equals("linear"))
+        for ( long i = start; 
+              i <= end; 
+              i += (end - start) / (points - 1) )
+          range.add(i);    
+      else if (mode.equals("geometric")) {
+        double c = Math.pow(10, Math.log10((double)end/(double)start) 
+                                            / (double)(points - 1));
+        for (long i = start; i <= end; i = (long)Math.ceil(c * i))
+          range.add(i);
+      } else
+        throw new RuntimeException(
+            "Error: Unrecognized value for parameter traverse.nodes.mode");
+    else 
+      range.add(start);
+
+    return range;
+  }
+
   public static void main(String[] args) throws Exception {
     if (args.length == 1)
      args = args[0].split("\\s+");
@@ -240,45 +273,29 @@ public class PerfUtil {
 
         long samples = Long.decode(config.get("traverse.samples"));
        
-
-        List<Long> nodes_params = new ArrayList<>();
-        if (nodes_points > 1)
-          if (nodes_mode.equals("linear"))
-            for ( long i = nodes_start; 
-                  i <= nodes_end; 
-                  i += (nodes_end - nodes_start) / (nodes_points - 1) )
-              nodes_params.add(i);    
-          else if (nodes_mode.equals("geometric")) {
-            double c = Math.pow(10, Math.log10((double)nodes_end/(double)nodes_start) 
-                                                / (double)(nodes_points - 1));
-            for (long i = nodes_start; i <= nodes_end; i = (long)Math.ceil(c * i))
-              nodes_params.add(i);
-          } else
-            throw new RuntimeException(
-                "Error: Unrecognized value for parameter traverse.nodes.mode");
-        else 
-          nodes_params.add(nodes_start);
-
-        List<Long> degree_params = new ArrayList<>(); 
-        if (degree_points > 1)
-          if (degree_mode.equals("linear"))
-            for ( long i = degree_start; 
-                  i <= degree_end; 
-                  i += (degree_end - degree_start) / (degree_points - 1) )
-              degree_params.add(i);    
-          else if (degree_mode.equals("geometric")) {
-            double c = Math.pow(10, Math.log10((double)degree_end/(double)degree_start) 
-                                                / (double)(degree_points - 1));
-            for (long i = degree_start; i <= degree_end; i = (long)Math.ceil(c * i))
-              degree_params.add(i);
-          } else
-            throw new RuntimeException(
-                "Error: Unrecognized value for parameter traverse.degree.mode");
-        else 
-          degree_params.add(degree_start);
+        List<Long> nodes_params = range(nodes_start, nodes_end, nodes_points, nodes_mode);
+        List<Long> degree_params = range(degree_start, degree_end, degree_points, degree_mode);
 
         // WarmUp
-        // ...
+        {
+          String edgeLabel = "knows";
+          Direction direction = Direction.OUT;
+          Vertex baseVertex = new Vertex(new UInt128(1,0), "Warmup");
+          Vertex neigVertex = new Vertex(new UInt128(1,0), "Warmup");
+          byte[] keyPrefix = GraphHelper.getEdgeListKeyPrefix(baseVertex.id(), edgeLabel, direction,
+                  neigVertex.label());
+
+          int numElements = 10000;
+          for (int j = 0; j < numElements; j++) {
+            EdgeList.prepend(null, graph.getClient(), graph.getEdgeListTableId(), keyPrefix, 
+                neigVertex.id(), new byte[0], 1024, 0);
+          }
+
+          for (int j = 0; j < 10000; j++) {
+            EdgeList.batchReadSingleThreaded(null, graph.getClient(), graph.getEdgeListTableId(),
+                Collections.singleton(baseVertex), edgeLabel, direction, false, "Warmup");
+          }
+        }
 
         // Output the header
         // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
@@ -365,6 +382,7 @@ public class PerfUtil {
           degree_prev = degree;
         }
 
+        graph.delete();
         graph.close();
       }
     }
