@@ -24,6 +24,7 @@ import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
@@ -73,6 +74,7 @@ public class PerfUtil {
       + "                       be executed from this script as if the args\n"
       + "                       were supplied at the command line, one per\n"
       + "                       line.\n"
+      + "  --output=<file>      Output file.\n"
       + "  -h --help            Show this screen.\n"
       + "  --version            Show version.\n"
       + "\n";
@@ -273,6 +275,15 @@ public class PerfUtil {
 
         long samples = Long.decode(config.get("traverse.samples"));
        
+        FileWriter outfile = null;
+        if (opts.get("--output") !=  null) {
+          try {
+            outfile = new FileWriter((String)opts.get("--output"));
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+
         List<Long> nodes_params = range(nodes_start, nodes_end, nodes_points, nodes_mode);
         List<Long> degree_params = range(degree_start, degree_end, degree_points, degree_mode);
 
@@ -299,7 +310,12 @@ public class PerfUtil {
 
         // Output the header
         // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
-        System.out.println("degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th");
+        if (outfile == null)
+          System.out.println(
+              "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th");
+        else
+          outfile.append(
+              "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
 
         long degree_prev = 0;
         for (long degree : degree_params) {
@@ -334,6 +350,13 @@ public class PerfUtil {
                                                       "Person");
               long endTime = System.nanoTime();
               execTimes[(int)i] = endTime - startTime;
+              if (i == 0)
+                System.out.println(String.format(
+                      "Nodes: %d, Degree: %d, Expected Neighbors: %d, Actual Neighbors: %d",
+                      nodes,
+                      degree,
+                      nodes*degree,
+                      result.vSet.size()));
             }
 
             // Calculate latency statistics
@@ -364,23 +387,41 @@ public class PerfUtil {
 
             // Print out the results (in microseconds)
             // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
-            System.out.println(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d", 
-                                              degree,
-                                              nodes,
-                                              min/1000,
-                                              mean/1000,
-                                              max/1000,
-                                              execTimes[(int)p50]/1000,
-                                              execTimes[(int)p90]/1000,
-                                              execTimes[(int)p95]/1000,
-                                              execTimes[(int)p99]/1000,
-                                              execTimes[(int)p999]/1000));
+            if (outfile == null)
+              System.out.println(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d", 
+                                                degree,
+                                                nodes,
+                                                min/1000,
+                                                mean/1000,
+                                                max/1000,
+                                                samples,
+                                                execTimes[(int)p50]/1000,
+                                                execTimes[(int)p90]/1000,
+                                                execTimes[(int)p95]/1000,
+                                                execTimes[(int)p99]/1000,
+                                                execTimes[(int)p999]/1000));
+            else
+              outfile.append(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n", 
+                                                degree,
+                                                nodes,
+                                                min/1000,
+                                                mean/1000,
+                                                max/1000,
+                                                samples,
+                                                execTimes[(int)p50]/1000,
+                                                execTimes[(int)p90]/1000,
+                                                execTimes[(int)p95]/1000,
+                                                execTimes[(int)p99]/1000,
+                                                execTimes[(int)p999]/1000));
               
             nodes_prev = nodes;
           }
 
           degree_prev = degree;
         }
+
+        if (outfile != null)
+          outfile.close();
 
         graph.delete();
         graph.close();
