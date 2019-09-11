@@ -636,6 +636,8 @@ public class EdgeList {
     long totalRequests = 0;
     long totalDeserializationTime = 0;
     long totalEdges = 0;
+    long totalHeadSegments = 0;
+    long totalTailSegments = 0;
 
     List<byte[]> keyPrefixes = GraphHelper.getEdgeListKeyPrefixes(vCol, eLabel, dir, nLabels);
 
@@ -772,7 +774,10 @@ public class EdgeList {
             spec.isHeadSeg = false;
             specQ.addLast(spec);
           }
-        }
+
+          totalHeadSegments++;
+        } else
+          totalTailSegments++;
 
         byte[] neighborIdBytes = new byte[UInt128.BYTES];
         while (seg.hasRemaining()) {
@@ -814,36 +819,40 @@ public class EdgeList {
     if (totalLockWaitTime == 0)
       totalLockWaitTime = totalReadTime;
 
-//    System.out.println(String.format(
-//          "{\"tag\": \"EdgeList.batchReadThread()\", "
-//          + "\"numThreads\": %d, "
-//          + "\"threadId\": %d, "
-//          + "\"totalRequests\": %d, "
-//          + "\"totalReadTime\": %d, "
-//          + "\"totalLockWaitTime\": %d, "
-//          + "\"totalDeserializationTime\": %d, "
-//          + "\"totalEdges\": %d, "
-//          + "\"parseProps\": %s, "
-//          + "\"avgDeserTimePerEdge\": %.3f, "
-//          + "\"avgDeserTimePerSeg\": %.3f, "
-//          + "\"totalTime\": %d, "
-//          + "\"percentTimeRead\": %.2f, "
-//          + "\"percentTimeLockWait\": %.2f, "
-//          + "\"percentTimeDeser\": %.2f}",
-//          numThreads,
-//          threadId,
-//          totalRequests,
-//          totalReadTime/1000,
-//          (totalLockWaitTime/1000) - (totalReadTime/1000),
-//          totalDeserializationTime/1000,
-//          totalEdges,
-//          parseProps,
-//          (double)totalDeserializationTime/(double)totalEdges/1000.0,
-//          (double)totalDeserializationTime/(double)totalRequests/1000.0,
-//          (endTime - startTime)/1000,
-//          (double)totalReadTime/(double)(endTime - startTime),
-//          (double)(totalLockWaitTime - totalReadTime)/(double)(endTime - startTime),
-//          (double)totalDeserializationTime/(double)(endTime - startTime)));
+    System.out.println(String.format(
+          "{\"tag\": \"EdgeList.batchReadThread()\", "
+          + "\"numThreads\": %d, "
+          + "\"threadId\": %d, "
+          + "\"totalRequests\": %d, "
+          + "\"totalHeadSegments\": %d, "
+          + "\"totalTailSegments\": %d, "
+          + "\"totalReadTime\": %d, "
+          + "\"totalLockWaitTime\": %d, "
+          + "\"totalDeserializationTime\": %d, "
+          + "\"totalEdges\": %d, "
+          + "\"parseProps\": %s, "
+          + "\"avgDeserTimePerEdge\": %.3f, "
+          + "\"avgDeserTimePerSeg\": %.3f, "
+          + "\"totalTime\": %d, "
+          + "\"percentTimeRead\": %.2f, "
+          + "\"percentTimeLockWait\": %.2f, "
+          + "\"percentTimeDeser\": %.2f}",
+          numThreads,
+          threadId,
+          totalRequests,
+          totalHeadSegments,
+          totalTailSegments,
+          totalReadTime/1000,
+          (totalLockWaitTime/1000) - (totalReadTime/1000),
+          totalDeserializationTime/1000,
+          totalEdges,
+          parseProps,
+          (double)totalDeserializationTime/(double)totalEdges/1000.0,
+          (double)totalDeserializationTime/(double)totalRequests/1000.0,
+          (endTime - startTime)/1000,
+          (double)totalReadTime/(double)(endTime - startTime),
+          (double)(totalLockWaitTime - totalReadTime)/(double)(endTime - startTime),
+          (double)totalDeserializationTime/(double)(endTime - startTime)));
 
     return new TraversalResult(vMap, pMap, vSet);
   }
