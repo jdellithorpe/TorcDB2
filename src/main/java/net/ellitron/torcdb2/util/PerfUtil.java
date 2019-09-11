@@ -288,23 +288,40 @@ public class PerfUtil {
         List<Long> degree_params = range(degree_start, degree_end, degree_points, degree_mode);
 
         // WarmUp
+        // Perform the experiment with a sample size of 1
         {
-          String edgeLabel = "knows";
-          Direction direction = Direction.OUT;
-          Vertex baseVertex = new Vertex(new UInt128(1,0), "Warmup");
-          Vertex neigVertex = new Vertex(new UInt128(1,0), "Warmup");
-          byte[] keyPrefix = GraphHelper.getEdgeListKeyPrefix(baseVertex.id(), edgeLabel, direction,
-                  neigVertex.label());
+          long degree_prev = 0;
+          for (long degree : degree_params) {
+            // Experiment setup: For each degree we setup all the nodes to have that degree. Each time
+            // degree is increased, we add the additional edges needed to the existing nodes to bring
+            // the degree up to the specified amount.
+            for (long i = 0; i < nodes_end; i++) {
+              Vertex startNode = new Vertex(new UInt128(1,i), "Person");
+              for (long j = degree_prev; j < degree; j++) {
+                // Vertices need labels, need to create vertex objects
+                graph.addEdge(startNode, 
+                              "knows", 
+                              new Vertex(new UInt128(1, nodes_end + j*nodes_end + i), "Person"), 
+                              null);
+              }
+            }
 
-          int numElements = 10000;
-          for (int j = 0; j < numElements; j++) {
-            EdgeList.prepend(null, graph.getClient(), graph.getEdgeListTableId(), keyPrefix, 
-                neigVertex.id(), new byte[0], 1024, 0);
-          }
+            long nodes_prev = 0;
+            Set<Vertex> startNodeSet = new HashSet<>();
+            for (long nodes : nodes_params) {
+              for (long i = nodes_prev; i < nodes; i++)
+                startNodeSet.add(new Vertex(new UInt128(1,i), "Person"));
 
-          for (int j = 0; j < 10000; j++) {
-            EdgeList.batchReadSingleThreaded(null, graph.getClient(), graph.getEdgeListTableId(),
-                Collections.singleton(baseVertex), edgeLabel, direction, false, "Warmup");
+              TraversalResult result = graph.traverse(startNodeSet, 
+                                                      "knows", 
+                                                      Direction.OUT, 
+                                                      false, 
+                                                      "Person");
+
+              nodes_prev = nodes;
+            }
+
+            degree_prev = degree;
           }
         }
 
