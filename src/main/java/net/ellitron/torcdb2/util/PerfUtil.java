@@ -289,7 +289,29 @@ public class PerfUtil {
 
         // WarmUp
         // Perform the experiment with a sample size of 1
+        long maxWarmupTime = 2; // minutes
+        long warmupStartTime = System.currentTimeMillis();
+        System.out.println(String.format("Beginning warmup (max %d minutes)...", maxWarmupTime));
         {
+          String edgeLabel = "knows";
+          Direction direction = Direction.OUT;
+          Vertex baseVertex = new Vertex(new UInt128(1,0), "Warmup");
+          Vertex neigVertex = new Vertex(new UInt128(1,0), "Warmup");
+          byte[] keyPrefix = GraphHelper.getEdgeListKeyPrefix(baseVertex.id(), edgeLabel, direction,
+                  neigVertex.label());
+
+          int numElements = 10000;
+          for (int j = 0; j < numElements; j++) {
+            EdgeList.prepend(null, graph.getClient(), graph.getEdgeListTableId(), keyPrefix, 
+                neigVertex.id(), new byte[0], 1024, 0);
+          }
+
+          for (int j = 0; j < 10000; j++) {
+            EdgeList.batchReadSingleThreaded(null, graph.getClient(), graph.getEdgeListTableId(),
+                Collections.singleton(baseVertex), edgeLabel, direction, false, "Warmup");
+          }
+
+
           long degree_prev = 0;
           for (long degree : degree_params) {
             // Experiment setup: For each degree we setup all the nodes to have that degree. Each time
@@ -312,18 +334,30 @@ public class PerfUtil {
               for (long i = nodes_prev; i < nodes; i++)
                 startNodeSet.add(new Vertex(new UInt128(1,i), "Person"));
 
-              TraversalResult result = graph.traverse(startNodeSet, 
-                                                      "knows", 
-                                                      Direction.OUT, 
-                                                      false, 
-                                                      "Person");
+              for (long i = 0; i < samples; i++) {
+                TraversalResult result = graph.traverse(startNodeSet, 
+                                                        "knows", 
+                                                        Direction.OUT, 
+                                                        false, 
+                                                        "Person");
+              }
+
+              if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= maxWarmupTime)
+                break;
 
               nodes_prev = nodes;
             }
 
+            if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= maxWarmupTime)
+              break;
+
             degree_prev = degree;
           }
         }
+
+        System.out.println(String.format(
+              "Warmup phase complete. Total time: %d seconds",
+              (System.currentTimeMillis() - warmupStartTime)/1000));
 
         // Output the header
         // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
@@ -367,13 +401,6 @@ public class PerfUtil {
                                                       "Person");
               long endTime = System.nanoTime();
               execTimes[(int)i] = endTime - startTime;
-              if (i == 0)
-                System.out.println(String.format(
-                      "Nodes: %d, Degree: %d, Expected Neighbors: %d, Actual Neighbors: %d",
-                      nodes,
-                      degree,
-                      nodes*degree,
-                      result.vSet.size()));
             }
 
             // Calculate latency statistics
@@ -417,7 +444,13 @@ public class PerfUtil {
                                                 execTimes[(int)p95]/1000,
                                                 execTimes[(int)p99]/1000,
                                                 execTimes[(int)p999]/1000));
-            else
+            else {
+              System.out.println(String.format(
+                    "\t{Degree: %d, Nodes: %d, EPS: %01.2f}",
+                    degree,
+                    nodes,
+                    1000.0 * (double)(degree * nodes * samples) / (double)sum));
+
               outfile.append(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n", 
                                                 degree,
                                                 nodes,
@@ -430,6 +463,7 @@ public class PerfUtil {
                                                 execTimes[(int)p95]/1000,
                                                 execTimes[(int)p99]/1000,
                                                 execTimes[(int)p999]/1000));
+            }
               
             nodes_prev = nodes;
           }
