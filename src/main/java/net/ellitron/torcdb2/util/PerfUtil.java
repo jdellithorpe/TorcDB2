@@ -50,6 +50,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Random;
 import java.util.Set;
 
 /**
@@ -64,6 +65,7 @@ public class PerfUtil {
       + "Usage:\n"
       + "  PerfUtil [options] edge_rdwr\n"
       + "  PerfUtil [options] traverse\n"
+      + "  PerfUtil [options] hashmapuint128keys\n"
       + "  PerfUtil (-h | --help)\n"
       + "  PerfUtil --version\n"
       + "\n"
@@ -513,6 +515,198 @@ public class PerfUtil {
 
         graph.delete();
         graph.close();
+      } else if ((Boolean) opts.get("hashmapuint128keys")) {
+        /*
+         * A test that measures the performance of hashmap operations when used with UInt128 objects
+         * as elements. The reason this test exists in the first place is because I found that the
+         * performance of get/put operations was affected by the values of UInt128 objects. The
+         * performance of hashCode() was measured, and found not to be the source of the performance
+         * variations.
+         */
+
+        // Warmup 
+        System.out.println("Beginning warmup phase...");
+        { 
+          {
+            HashMap<UInt128, Object> map = new HashMap<>();
+
+            for (int i = 0; i < 1000; i++) {
+              for (int j = 0; j < 1000; j++) {
+                UInt128 idValue = new UInt128(0, i*1000 + j);
+                map.put(idValue, null);
+              }
+            }
+          }
+
+          {
+            HashMap<UInt128, Object> map = new HashMap<>();
+
+            for (int i = 0; i < 1000; i++) {
+              for (int j = 0; j < 1000; j++) {
+                UInt128 idValue = new UInt128(0, j*1000 + i);
+                map.put(idValue, null);
+              }
+            }
+          }
+        }
+
+        System.out.println("Completed warmup phase.");
+
+        // Sequential
+        System.out.println("Performing sequential id test...");
+        long nodes = 24;
+        long degree = 128;
+        long numRuns = 1000;
+        Long[] latency = new Long[(int)(nodes * degree * numRuns)];
+        for (int r = 0; r < numRuns; r++) {
+          HashMap<UInt128, Object> map = new HashMap<>();
+
+          for (int i = 0; i < nodes; i++) {
+            for (int j = 0; j < degree; j++) {
+              UInt128 idValue = new UInt128(0, i*degree + j);
+              long startTime = System.nanoTime();
+              map.put(idValue, null);
+              long endTime = System.nanoTime();
+              latency[(int)(r*nodes*degree + i*degree + j)] = endTime - startTime;
+            }
+          }
+        }
+
+        {
+          // Calculate latency statistics
+          Arrays.sort(latency);
+
+          long sum = 0;
+          long min = Long.MAX_VALUE;
+          long max = 0;
+          for (int k = 0; k < latency.length; k++) {
+            sum += latency[k];
+
+            if (latency[k] < min)
+              min = latency[k];
+
+            if (latency[k] > max)
+              max = latency[k];
+          }
+
+          long mean = sum / latency.length;
+
+          long p25  = (int) (0.250 * (float) latency.length);
+          long p50  = (int) (0.500 * (float) latency.length);
+          long p75  = (int) (0.750 * (float) latency.length);
+          long p90  = (int) (0.900 * (float) latency.length);
+          long p95  = (int) (0.950 * (float) latency.length);
+          long p99  = (int) (0.990 * (float) latency.length);
+          long p999 = (int) (0.999 * (float) latency.length);
+
+          System.out.println(String.format("%d, %d, %d, %d",
+                min,
+                mean,
+                max,
+                latency[(int)p50]));
+        }
+
+        // Random
+        System.out.println("Performing random id test...");
+        Random random = new Random();
+        for (int r = 0; r < numRuns; r++) {
+          HashMap<UInt128, Object> map = new HashMap<>();
+
+          for (int i = 0; i < nodes; i++) {
+            for (int j = 0; j < degree; j++) {
+              UInt128 idValue = new UInt128(0, random.nextLong());
+              long startTime = System.nanoTime();
+              map.put(idValue, null);
+              long endTime = System.nanoTime();
+              latency[(int)(r*nodes*degree + i*degree + j)] = endTime - startTime;
+            }
+          }
+        }
+
+        {
+          // Calculate latency statistics
+          Arrays.sort(latency);
+
+          long sum = 0;
+          long min = Long.MAX_VALUE;
+          long max = 0;
+          for (int k = 0; k < latency.length; k++) {
+            sum += latency[k];
+
+            if (latency[k] < min)
+              min = latency[k];
+
+            if (latency[k] > max)
+              max = latency[k];
+          }
+
+          long mean = sum / latency.length;
+
+          long p25  = (int) (0.250 * (float) latency.length);
+          long p50  = (int) (0.500 * (float) latency.length);
+          long p75  = (int) (0.750 * (float) latency.length);
+          long p90  = (int) (0.900 * (float) latency.length);
+          long p95  = (int) (0.950 * (float) latency.length);
+          long p99  = (int) (0.990 * (float) latency.length);
+          long p999 = (int) (0.999 * (float) latency.length);
+
+          System.out.println(String.format("%d, %d, %d, %d",
+                min,
+                mean,
+                max,
+                latency[(int)p50]));
+        }
+
+        // Big block
+        System.out.println("Performing block id test...");
+        for (int r = 0; r < numRuns; r++) {
+          HashMap<UInt128, Object> map = new HashMap<>();
+
+          for (int i = 0; i < nodes; i++) {
+            for (int j = 0; j < degree; j++) {
+              UInt128 idValue = new UInt128(0, j*1024 + i);
+              long startTime = System.nanoTime();
+              map.put(idValue, null);
+              long endTime = System.nanoTime();
+              latency[(int)(r*nodes*degree + i*degree + j)] = endTime - startTime;
+
+            }
+          }
+        }
+
+        {
+          // Calculate latency statistics
+          Arrays.sort(latency);
+
+          long sum = 0;
+          long min = Long.MAX_VALUE;
+          long max = 0;
+          for (int k = 0; k < latency.length; k++) {
+            sum += latency[k];
+
+            if (latency[k] < min)
+              min = latency[k];
+
+            if (latency[k] > max)
+              max = latency[k];
+          }
+
+          long mean = sum / latency.length;
+
+          long p25  = (int) (0.250 * (float) latency.length);
+          long p50  = (int) (0.500 * (float) latency.length);
+          long p75  = (int) (0.750 * (float) latency.length);
+          long p90  = (int) (0.900 * (float) latency.length);
+          long p95  = (int) (0.950 * (float) latency.length);
+          long p99  = (int) (0.990 * (float) latency.length);
+          long p999 = (int) (0.999 * (float) latency.length);
+
+          System.out.println(String.format("%d, %d, %d, %d",
+                min,
+                mean,
+                max,
+                latency[(int)p50]));
+        }
       }
     }
   }
