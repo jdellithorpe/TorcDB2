@@ -263,6 +263,20 @@ public class PerfUtil {
       } else if ((Boolean) opts.get("traverse")) {
         Graph graph = new Graph(config);
 
+        long warmup_nodes_start = Long.decode(config.get("traverse.warmup.nodes.start"));
+        long warmup_nodes_end = Long.decode(config.get("traverse.warmup.nodes.end"));
+        long warmup_nodes_points = Long.decode(config.get("traverse.warmup.nodes.points"));
+        String warmup_nodes_mode = config.get("traverse.warmup.nodes.mode");
+
+        long warmup_degree_start = Long.decode(config.get("traverse.warmup.degree.start"));
+        long warmup_degree_end = Long.decode(config.get("traverse.warmup.degree.end"));
+        long warmup_degree_points = Long.decode(config.get("traverse.warmup.degree.points"));
+        String warmup_degree_mode = config.get("traverse.warmup.degree.mode");
+
+        long warmup_samples = Long.decode(config.get("traverse.warmup.samples"));
+
+        long warmup_maxtime = Long.decode(config.get("traverse.warmup.maxtime"));
+       
         long nodes_start = Long.decode(config.get("traverse.nodes.start"));
         long nodes_end = Long.decode(config.get("traverse.nodes.end"));
         long nodes_points = Long.decode(config.get("traverse.nodes.points"));
@@ -284,14 +298,18 @@ public class PerfUtil {
           }
         }
 
+        List<Long> warmup_nodes_params = range(warmup_nodes_start, warmup_nodes_end, 
+            warmup_nodes_points, warmup_nodes_mode);
+        List<Long> warmup_degree_params = range(warmup_degree_start, warmup_degree_end, 
+            warmup_degree_points, warmup_degree_mode);
+
         List<Long> nodes_params = range(nodes_start, nodes_end, nodes_points, nodes_mode);
         List<Long> degree_params = range(degree_start, degree_end, degree_points, degree_mode);
 
         // WarmUp
         // Perform the experiment with a sample size of 1
-        long maxWarmupTime = 2; // minutes
         long warmupStartTime = System.currentTimeMillis();
-        System.out.println(String.format("Beginning warmup (max %d minutes)...", maxWarmupTime));
+        System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
         {
           String edgeLabel = "knows";
           Direction direction = Direction.OUT;
@@ -311,30 +329,30 @@ public class PerfUtil {
                 Collections.singleton(baseVertex), edgeLabel, direction, false, "Warmup");
           }
 
-
           long degree_prev = 0;
-          for (long degree : degree_params) {
+          for (long degree : warmup_degree_params) {
             // Experiment setup: For each degree we setup all the nodes to have that degree. Each time
             // degree is increased, we add the additional edges needed to the existing nodes to bring
             // the degree up to the specified amount.
-            for (long i = 0; i < nodes_end; i++) {
+            for (long i = 0; i < warmup_nodes_end; i++) {
               Vertex startNode = new Vertex(new UInt128(1,i), "Person");
               for (long j = degree_prev; j < degree; j++) {
                 // Vertices need labels, need to create vertex objects
                 graph.addEdge(startNode, 
                               "knows", 
-                              new Vertex(new UInt128(1, nodes_end + j*nodes_end + i), "Person"), 
+                              new Vertex(new UInt128(1, warmup_nodes_end + j*warmup_nodes_end + i), 
+                                "Person"), 
                               null);
               }
             }
 
             long nodes_prev = 0;
             Set<Vertex> startNodeSet = new HashSet<>();
-            for (long nodes : nodes_params) {
+            for (long nodes : warmup_nodes_params) {
               for (long i = nodes_prev; i < nodes; i++)
                 startNodeSet.add(new Vertex(new UInt128(1,i), "Person"));
 
-              for (long i = 0; i < samples; i++) {
+              for (long i = 0; i < warmup_samples; i++) {
                 TraversalResult result = graph.traverse(startNodeSet, 
                                                         "knows", 
                                                         Direction.OUT, 
@@ -342,13 +360,13 @@ public class PerfUtil {
                                                         "Person");
               }
 
-              if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= maxWarmupTime)
+              if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= warmup_maxtime)
                 break;
 
               nodes_prev = nodes;
             }
 
-            if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= maxWarmupTime)
+            if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= warmup_maxtime)
               break;
 
             degree_prev = degree;
@@ -369,18 +387,33 @@ public class PerfUtil {
               "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
 
         long degree_prev = 0;
+        long neighborId = 0;
         for (long degree : degree_params) {
           // Experiment setup: For each degree we setup all the nodes to have that degree. Each time
           // degree is increased, we add the additional edges needed to the existing nodes to bring
           // the degree up to the specified amount.
-          for (long i = 0; i < nodes_end; i++) {
+//          for (long i = 0; i < nodes_end; i++) {
+//            Vertex startNode = new Vertex(new UInt128(0,i), "Person");
+//            for (long j = degree_prev; j < degree; j++) {
+//              // Vertices need labels, need to create vertex objects
+//              graph.addEdge(startNode, 
+//                            "knows", 
+//                            new Vertex(new UInt128(0, nodes_end + j*nodes_end + i), "Person"), 
+//                            null);
+//            }
+//          }
+
+          warmup_nodes_end = 1024;
+          for (long i = 0; i < warmup_nodes_end; i++) {
             Vertex startNode = new Vertex(new UInt128(0,i), "Person");
             for (long j = degree_prev; j < degree; j++) {
               // Vertices need labels, need to create vertex objects
               graph.addEdge(startNode, 
                             "knows", 
-                            new Vertex(new UInt128(0, nodes_end + j*nodes_end + i), "Person"), 
+                            new Vertex(new UInt128(0, j*warmup_nodes_end + i), "Person"), 
+//                            new Vertex(new UInt128(0, neighborId), "Person"), 
                             null);
+              neighborId++;
             }
           }
 
@@ -392,6 +425,7 @@ public class PerfUtil {
 
             // Execution times are recorded in nanoseconds.
             Long[] execTimes = new Long[(int)samples];
+            long numNeighbors = 0;
             for (long i = 0; i < samples; i++) {
               long startTime = System.nanoTime();
               TraversalResult result = graph.traverse(startNodeSet, 
@@ -401,6 +435,7 @@ public class PerfUtil {
                                                       "Person");
               long endTime = System.nanoTime();
               execTimes[(int)i] = endTime - startTime;
+              numNeighbors = result.vSet.size();
             }
 
             // Calculate latency statistics
@@ -446,10 +481,12 @@ public class PerfUtil {
                                                 execTimes[(int)p999]/1000));
             else {
               System.out.println(String.format(
-                    "\t{Degree: %d, Nodes: %d, EPS: %01.2f}",
+                    "\t{Degree: %d, Nodes: %d, Nbrs: %d, Time: %d, EPS: %01.2f}",
                     degree,
                     nodes,
-                    1000.0 * (double)(degree * nodes * samples) / (double)sum));
+                    numNeighbors,
+                    min/1000,
+                    1000.0 * (double)(degree * nodes) / (double)min));
 
               outfile.append(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n", 
                                                 degree,
