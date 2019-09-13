@@ -33,6 +33,8 @@ import java.util.UUID;
  */
 public class UInt128 implements Comparable<UInt128> {
 
+//  public static long samplerCounter = 0;
+
   public static final int SIZE = 128;
   public static final int BYTES = SIZE / Byte.SIZE;
 

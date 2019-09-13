@@ -635,9 +635,12 @@ public class EdgeList {
     long totalLockWaitTime = 0;
     long totalRequests = 0;
     long totalDeserializationTime = 0;
+    long totalEdgeParseTime = 0;
+    long totalDedupTime = 0;
     long totalEdges = 0;
     long totalHeadSegments = 0;
     long totalTailSegments = 0;
+    long samplerCounter = 0;
 
     List<byte[]> keyPrefixes = GraphHelper.getEdgeListKeyPrefixes(vCol, eLabel, dir, nLabels);
 
@@ -779,23 +782,46 @@ public class EdgeList {
         } else
           totalTailSegments++;
 
+        long edgeParseStartTime = System.nanoTime();
+
         byte[] neighborIdBytes = new byte[UInt128.BYTES];
         while (seg.hasRemaining()) {
           totalEdges++;
 
           seg.get(neighborIdBytes);
 
+          
           UInt128 neighborId = new UInt128(neighborIdBytes);
 
+          long dedupStartTime = System.nanoTime();
+
+//          long dedupGetStartTime = System.nanoTime();
           Vertex nv = vDedupMap.get(neighborId);
+//          long dedupGetEndTime = System.nanoTime();
+
+//          if (samplerCounter % 999 == 0)
+//            System.out.println(dedupGetEndTime - dedupGetStartTime);
+//          samplerCounter++;
+
           if (nv != null) {
             vList.add(nv);
           } else {
             Vertex v = new Vertex(neighborId, spec.neighborLabel);
+//            if (samplerCounter % 999 == 0) {
+//              long vListAddStartTime = System.nanoTime();
+//              vList.add(v);
+//              long vListAddEndTime = System.nanoTime();
+//              System.out.println(vListAddEndTime - vListAddStartTime);
+//            } else {
+//              vList.add(v);
+//            }
+//            samplerCounter++;
             vList.add(v);
             vDedupMap.put(neighborId, v);
             vSet.add(v);
           }
+
+          totalDedupTime += System.nanoTime() - dedupStartTime;
 
           short propLen = seg.getShort();
 
@@ -809,6 +835,8 @@ public class EdgeList {
             seg.position(seg.position() + propLen);
           }
         }
+
+        totalEdgeParseTime += System.nanoTime() - edgeParseStartTime;
       }
       long deserEndTime = System.nanoTime();
       totalDeserializationTime += deserEndTime - deserStartTime;
@@ -829,6 +857,8 @@ public class EdgeList {
 //          + "\"totalReadTime\": %d, "
 //          + "\"totalLockWaitTime\": %d, "
 //          + "\"totalDeserializationTime\": %d, "
+//          + "\"totalEdgeParseTime\": %d, "
+//          + "\"totalDedupTime\": %d, "
 //          + "\"totalEdges\": %d, "
 //          + "\"parseProps\": %s, "
 //          + "\"avgDeserTimePerEdge\": %.3f, "
@@ -845,6 +875,8 @@ public class EdgeList {
 //          totalReadTime/1000,
 //          (totalLockWaitTime/1000) - (totalReadTime/1000),
 //          totalDeserializationTime/1000,
+//          totalEdgeParseTime/1000,
+//          totalDedupTime/1000,
 //          totalEdges,
 //          parseProps,
 //          (double)totalDeserializationTime/(double)totalEdges/1000.0,
