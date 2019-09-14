@@ -793,7 +793,7 @@ public class EdgeList {
           
           UInt128 neighborId = new UInt128(neighborIdBytes);
 
-          long dedupStartTime = System.nanoTime();
+//          long dedupStartTime = System.nanoTime();
 
 //          long dedupGetStartTime = System.nanoTime();
           Vertex nv = vDedupMap.get(neighborId);
@@ -821,7 +821,7 @@ public class EdgeList {
             vSet.add(v);
           }
 
-          totalDedupTime += System.nanoTime() - dedupStartTime;
+//          totalDedupTime += System.nanoTime() - dedupStartTime;
 
           short propLen = seg.getShort();
 
