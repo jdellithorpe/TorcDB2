@@ -332,6 +332,7 @@ public class PerfUtil {
           }
 
           long degree_prev = 0;
+          long neighborIdCounter = 0;
           for (long degree : warmup_degree_params) {
             // Experiment setup: For each degree we setup all the nodes to have that degree. Each time
             // degree is increased, we add the additional edges needed to the existing nodes to bring
@@ -342,9 +343,10 @@ public class PerfUtil {
                 // Vertices need labels, need to create vertex objects
                 graph.addEdge(startNode, 
                               "knows", 
-                              new Vertex(new UInt128(1, warmup_nodes_end + j*warmup_nodes_end + i), 
+                              new Vertex(new UInt128(1, neighborIdCounter), 
                                 "Person"), 
                               null);
+                neighborIdCounter++;
               }
             }
 
@@ -389,33 +391,20 @@ public class PerfUtil {
               "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
 
         long degree_prev = 0;
-        long neighborId = 0;
+        long neighborIdCounter = 0;
         for (long degree : degree_params) {
           // Experiment setup: For each degree we setup all the nodes to have that degree. Each time
           // degree is increased, we add the additional edges needed to the existing nodes to bring
           // the degree up to the specified amount.
-//          for (long i = 0; i < nodes_end; i++) {
-//            Vertex startNode = new Vertex(new UInt128(0,i), "Person");
-//            for (long j = degree_prev; j < degree; j++) {
-//              // Vertices need labels, need to create vertex objects
-//              graph.addEdge(startNode, 
-//                            "knows", 
-//                            new Vertex(new UInt128(0, nodes_end + j*nodes_end + i), "Person"), 
-//                            null);
-//            }
-//          }
-
-          warmup_nodes_end = 1024;
-          for (long i = 0; i < warmup_nodes_end; i++) {
+          for (long i = 0; i < nodes_end; i++) {
             Vertex startNode = new Vertex(new UInt128(0,i), "Person");
             for (long j = degree_prev; j < degree; j++) {
               // Vertices need labels, need to create vertex objects
               graph.addEdge(startNode, 
                             "knows", 
-                            new Vertex(new UInt128(0, j*warmup_nodes_end + i), "Person"), 
-//                            new Vertex(new UInt128(0, neighborId), "Person"), 
+                            new Vertex(new UInt128(0, neighborIdCounter), "Person"), 
                             null);
-              neighborId++;
+              neighborIdCounter++;
             }
           }
 
@@ -669,7 +658,6 @@ public class PerfUtil {
               map.put(idValue, null);
               long endTime = System.nanoTime();
               latency[(int)(r*nodes*degree + i*degree + j)] = endTime - startTime;
-
             }
           }
         }
