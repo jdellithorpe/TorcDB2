@@ -391,7 +391,8 @@ public class PerfUtil {
               "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
 
         long degree_prev = 0;
-        long neighborIdCounter = 0;
+//        long neighborIdCounter = 0;
+        Random random = new Random();
         for (long degree : degree_params) {
           // Experiment setup: For each degree we setup all the nodes to have that degree. Each time
           // degree is increased, we add the additional edges needed to the existing nodes to bring
@@ -402,9 +403,9 @@ public class PerfUtil {
               // Vertices need labels, need to create vertex objects
               graph.addEdge(startNode, 
                             "knows", 
-                            new Vertex(new UInt128(0, neighborIdCounter), "Person"), 
+                            new Vertex(new UInt128(0, random.nextLong()), "Person"), 
                             null);
-              neighborIdCounter++;
+//              neighborIdCounter++;
             }
           }
 
