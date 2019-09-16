@@ -392,7 +392,7 @@ public class PerfUtil {
 
         long degree_prev = 0;
 //        long neighborIdCounter = 0;
-        Random random = new Random();
+        Random random = new Random(0);
         for (long degree : degree_params) {
           // Experiment setup: For each degree we setup all the nodes to have that degree. Each time
           // degree is increased, we add the additional edges needed to the existing nodes to bring
