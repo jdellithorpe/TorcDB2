@@ -66,6 +66,7 @@ public class PerfUtil {
       + "  PerfUtil [options] edge_rdwr\n"
       + "  PerfUtil [options] traverse\n"
       + "  PerfUtil [options] hashmapuint128keys\n"
+      + "  PerfUtil [options] traverse.hashmap\n"
       + "  PerfUtil (-h | --help)\n"
       + "  PerfUtil --version\n"
       + "\n"
@@ -696,6 +697,204 @@ public class PerfUtil {
                 max,
                 latency[(int)p50]));
         }
+      } else if ((Boolean) opts.get("traverse.hashmap")) {
+        long nodes_start = Long.decode(config.get("traverse.hashmap.nodes.start"));
+        long nodes_end = Long.decode(config.get("traverse.hashmap.nodes.end"));
+        long nodes_points = Long.decode(config.get("traverse.hashmap.nodes.points"));
+        String nodes_mode = config.get("traverse.hashmap.nodes.mode");
+
+        long degree_start = Long.decode(config.get("traverse.hashmap.degree.start"));
+        long degree_end = Long.decode(config.get("traverse.hashmap.degree.end"));
+        long degree_points = Long.decode(config.get("traverse.hashmap.degree.points"));
+        String degree_mode = config.get("traverse.hashmap.degree.mode");
+
+        long samples = Long.decode(config.get("traverse.hashmap.samples"));
+       
+        FileWriter outfile = null;
+        if (opts.get("--output") !=  null) {
+          try {
+            outfile = new FileWriter((String)opts.get("--output"));
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+
+        List<Long> nodes_params = range(nodes_start, nodes_end, nodes_points, nodes_mode);
+        List<Long> degree_params = range(degree_start, degree_end, degree_points, degree_mode);
+
+        // Warmup 
+        System.out.println("Beginning warmup phase...");
+
+        { 
+          {
+            HashMap<UInt128, Object> map = new HashMap<>();
+
+            for (int i = 0; i < 1000; i++) {
+              for (int j = 0; j < 1000; j++) {
+                UInt128 idValue = new UInt128(0, i*1000 + j);
+                map.put(idValue, null);
+              }
+            }
+          }
+
+          {
+            HashMap<UInt128, Object> map = new HashMap<>();
+
+            for (int i = 0; i < 1000; i++) {
+              for (int j = 0; j < 1000; j++) {
+                UInt128 idValue = new UInt128(0, j*1000 + i);
+                map.put(idValue, null);
+              }
+            }
+          }
+
+
+          long degree_prev = 0;
+          Random random = new Random(0);
+         
+          // Use array of UInt128s to simulate edge lists.
+          List<List<UInt128>> edgeLists = new ArrayList<>((int)nodes_end);
+          for (long i = 0; i < nodes_end; i++)
+            edgeLists.add(new ArrayList<>((int)degree_end));
+
+          for (long degree : degree_params) {
+            for (long i = 0; i < nodes_end; i++)
+              for (long j = degree_prev; j < degree; j++)
+                edgeLists.get((int)i).add(new UInt128(0, random.nextLong()));
+
+            for (long nodes : nodes_params) {
+              // Execution times are recorded in nanoseconds.
+              Long[] execTimes = new Long[(int)samples];
+              long numNeighbors = 0;
+              for (long i = 0; i < samples; i++) {
+                Set<UInt128> vSet = new HashSet<>();
+                long startTime = System.nanoTime();
+                for (long j = 0; j < nodes; j++) {
+                  for (UInt128 neighborId : edgeLists.get((int)j)) {
+                    vSet.add(neighborId);
+                  }
+                }
+                long endTime = System.nanoTime();
+                execTimes[(int)i] = endTime - startTime;
+                numNeighbors = vSet.size();
+              }
+            }
+
+            degree_prev = degree;
+          }
+        }
+
+        System.out.println("Completed warmup phase.");
+
+        // Output the header
+        // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+        if (outfile == null)
+          System.out.println(
+              "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th");
+        else
+          outfile.append(
+              "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
+
+        long degree_prev = 0;
+        Random random = new Random(0);
+       
+        // Use array of UInt128s to simulate edge lists.
+        List<List<UInt128>> edgeLists = new ArrayList<>((int)nodes_end);
+        for (long i = 0; i < nodes_end; i++)
+          edgeLists.add(new ArrayList<>((int)degree_end));
+
+        for (long degree : degree_params) {
+          for (long i = 0; i < nodes_end; i++)
+            for (long j = degree_prev; j < degree; j++)
+              edgeLists.get((int)i).add(new UInt128(0, random.nextLong()));
+
+          for (long nodes : nodes_params) {
+            // Execution times are recorded in nanoseconds.
+            Long[] execTimes = new Long[(int)samples];
+            long numNeighbors = 0;
+            for (long i = 0; i < samples; i++) {
+              Set<UInt128> vSet = new HashSet<>();
+              long startTime = System.nanoTime();
+              for (long j = 0; j < nodes; j++) {
+                for (UInt128 neighborId : edgeLists.get((int)j)) {
+                  vSet.add(neighborId);
+                }
+              }
+              long endTime = System.nanoTime();
+              execTimes[(int)i] = endTime - startTime;
+              numNeighbors = vSet.size();
+            }
+
+            // Calculate latency statistics
+            Arrays.sort(execTimes);
+
+            long sum = 0;
+            long min = Long.MAX_VALUE;
+            long max = 0;
+            for (int k = 0; k < execTimes.length; k++) {
+              sum += execTimes[k];
+
+              if (execTimes[k] < min)
+                min = execTimes[k];
+
+              if (execTimes[k] > max)
+                max = execTimes[k];
+            }
+
+            long mean = sum / execTimes.length;
+
+            long p25  = (int) (0.250 * (float) execTimes.length);
+            long p50  = (int) (0.500 * (float) execTimes.length);
+            long p75  = (int) (0.750 * (float) execTimes.length);
+            long p90  = (int) (0.900 * (float) execTimes.length);
+            long p95  = (int) (0.950 * (float) execTimes.length);
+            long p99  = (int) (0.990 * (float) execTimes.length);
+            long p999 = (int) (0.999 * (float) execTimes.length);
+
+            // Print out the results (in nanoseconds)
+            // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+            if (outfile == null)
+              System.out.println(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d", 
+                                                degree,
+                                                nodes,
+                                                min,
+                                                mean,
+                                                max,
+                                                samples,
+                                                execTimes[(int)p50],
+                                                execTimes[(int)p90],
+                                                execTimes[(int)p95],
+                                                execTimes[(int)p99],
+                                                execTimes[(int)p999]));
+            else {
+              System.out.println(String.format(
+                    "\t{Degree: %d, Nodes: %d, Nbrs: %d, Time: %d, EPS: %01.2f}",
+                    degree,
+                    nodes,
+                    numNeighbors,
+                    min,
+                    1000.0 * (double)(degree * nodes) / (double)min));
+
+              outfile.append(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n", 
+                                                degree,
+                                                nodes,
+                                                min,
+                                                mean,
+                                                max,
+                                                samples,
+                                                execTimes[(int)p50],
+                                                execTimes[(int)p90],
+                                                execTimes[(int)p95],
+                                                execTimes[(int)p99],
+                                                execTimes[(int)p999]));
+            }
+          }
+
+          degree_prev = degree;
+        }
+
+        if (outfile != null)
+          outfile.close();
       }
     }
   }
