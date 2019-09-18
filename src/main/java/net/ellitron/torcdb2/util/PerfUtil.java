@@ -30,6 +30,7 @@ import java.io.IOException;
 
 import java.lang.Math;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.Thread;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -64,9 +65,10 @@ public class PerfUtil {
       + "\n"
       + "Usage:\n"
       + "  PerfUtil [options] edge_rdwr\n"
-      + "  PerfUtil [options] traverse\n"
+      + "  PerfUtil [options] traverse_unique_neighbors\n"
+      + "  PerfUtil [options] traverse_one_neighbor\n"
       + "  PerfUtil [options] hashmapuint128keys\n"
-      + "  PerfUtil [options] traverse.hashmap\n"
+      + "  PerfUtil [options] traverse_hashmap_put\n"
       + "  PerfUtil (-h | --help)\n"
       + "  PerfUtil --version\n"
       + "\n"
@@ -263,34 +265,34 @@ public class PerfUtil {
                 writeLatency[(int) (0.50 * (float) writeLatency.length)]/1000, 
                 readLatency[(int) (0.50 * (float) readLatency.length)]/1000));
         }
-      } else if ((Boolean) opts.get("traverse")) {
+      } else if ((Boolean) opts.get("traverse_unique_neighbors")) {
         Graph graph = new Graph(config);
 
-        long warmup_nodes_start = Long.decode(config.get("traverse.warmup.nodes.start"));
-        long warmup_nodes_end = Long.decode(config.get("traverse.warmup.nodes.end"));
-        long warmup_nodes_points = Long.decode(config.get("traverse.warmup.nodes.points"));
-        String warmup_nodes_mode = config.get("traverse.warmup.nodes.mode");
+        long warmup_nodes_start = Long.decode(config.get("traverse_unique_neighbors.warmup.nodes.start"));
+        long warmup_nodes_end = Long.decode(config.get("traverse_unique_neighbors.warmup.nodes.end"));
+        long warmup_nodes_points = Long.decode(config.get("traverse_unique_neighbors.warmup.nodes.points"));
+        String warmup_nodes_mode = config.get("traverse_unique_neighbors.warmup.nodes.mode");
 
-        long warmup_degree_start = Long.decode(config.get("traverse.warmup.degree.start"));
-        long warmup_degree_end = Long.decode(config.get("traverse.warmup.degree.end"));
-        long warmup_degree_points = Long.decode(config.get("traverse.warmup.degree.points"));
-        String warmup_degree_mode = config.get("traverse.warmup.degree.mode");
+        long warmup_degree_start = Long.decode(config.get("traverse_unique_neighbors.warmup.degree.start"));
+        long warmup_degree_end = Long.decode(config.get("traverse_unique_neighbors.warmup.degree.end"));
+        long warmup_degree_points = Long.decode(config.get("traverse_unique_neighbors.warmup.degree.points"));
+        String warmup_degree_mode = config.get("traverse_unique_neighbors.warmup.degree.mode");
 
-        long warmup_samples = Long.decode(config.get("traverse.warmup.samples"));
+        long warmup_samples = Long.decode(config.get("traverse_unique_neighbors.warmup.samples"));
 
-        long warmup_maxtime = Long.decode(config.get("traverse.warmup.maxtime"));
+        long warmup_maxtime = Long.decode(config.get("traverse_unique_neighbors.warmup.maxtime"));
        
-        long nodes_start = Long.decode(config.get("traverse.nodes.start"));
-        long nodes_end = Long.decode(config.get("traverse.nodes.end"));
-        long nodes_points = Long.decode(config.get("traverse.nodes.points"));
-        String nodes_mode = config.get("traverse.nodes.mode");
+        long nodes_start = Long.decode(config.get("traverse_unique_neighbors.nodes.start"));
+        long nodes_end = Long.decode(config.get("traverse_unique_neighbors.nodes.end"));
+        long nodes_points = Long.decode(config.get("traverse_unique_neighbors.nodes.points"));
+        String nodes_mode = config.get("traverse_unique_neighbors.nodes.mode");
 
-        long degree_start = Long.decode(config.get("traverse.degree.start"));
-        long degree_end = Long.decode(config.get("traverse.degree.end"));
-        long degree_points = Long.decode(config.get("traverse.degree.points"));
-        String degree_mode = config.get("traverse.degree.mode");
+        long degree_start = Long.decode(config.get("traverse_unique_neighbors.degree.start"));
+        long degree_end = Long.decode(config.get("traverse_unique_neighbors.degree.end"));
+        long degree_points = Long.decode(config.get("traverse_unique_neighbors.degree.points"));
+        String degree_mode = config.get("traverse_unique_neighbors.degree.mode");
 
-        long samples = Long.decode(config.get("traverse.samples"));
+        long samples = Long.decode(config.get("traverse_unique_neighbors.samples"));
        
         FileWriter outfile = null;
         if (opts.get("--output") !=  null) {
@@ -697,18 +699,18 @@ public class PerfUtil {
                 max,
                 latency[(int)p50]));
         }
-      } else if ((Boolean) opts.get("traverse.hashmap")) {
-        long nodes_start = Long.decode(config.get("traverse.hashmap.nodes.start"));
-        long nodes_end = Long.decode(config.get("traverse.hashmap.nodes.end"));
-        long nodes_points = Long.decode(config.get("traverse.hashmap.nodes.points"));
-        String nodes_mode = config.get("traverse.hashmap.nodes.mode");
+      } else if ((Boolean) opts.get("traverse_hashmap_put")) {
+        long nodes_start = Long.decode(config.get("traverse_hashmap_put.nodes.start"));
+        long nodes_end = Long.decode(config.get("traverse_hashmap_put.nodes.end"));
+        long nodes_points = Long.decode(config.get("traverse_hashmap_put.nodes.points"));
+        String nodes_mode = config.get("traverse_hashmap_put.nodes.mode");
 
-        long degree_start = Long.decode(config.get("traverse.hashmap.degree.start"));
-        long degree_end = Long.decode(config.get("traverse.hashmap.degree.end"));
-        long degree_points = Long.decode(config.get("traverse.hashmap.degree.points"));
-        String degree_mode = config.get("traverse.hashmap.degree.mode");
+        long degree_start = Long.decode(config.get("traverse_hashmap_put.degree.start"));
+        long degree_end = Long.decode(config.get("traverse_hashmap_put.degree.end"));
+        long degree_points = Long.decode(config.get("traverse_hashmap_put.degree.points"));
+        String degree_mode = config.get("traverse_hashmap_put.degree.mode");
 
-        long samples = Long.decode(config.get("traverse.hashmap.samples"));
+        long samples = Long.decode(config.get("traverse_hashmap_put.samples"));
        
         FileWriter outfile = null;
         if (opts.get("--output") !=  null) {
@@ -726,27 +728,27 @@ public class PerfUtil {
         System.out.println("Beginning warmup phase...");
 
         { 
-          {
-            HashMap<UInt128, Object> map = new HashMap<>();
-
-            for (int i = 0; i < 1000; i++) {
-              for (int j = 0; j < 1000; j++) {
-                UInt128 idValue = new UInt128(0, i*1000 + j);
-                map.put(idValue, null);
-              }
-            }
-          }
-
-          {
-            HashMap<UInt128, Object> map = new HashMap<>();
-
-            for (int i = 0; i < 1000; i++) {
-              for (int j = 0; j < 1000; j++) {
-                UInt128 idValue = new UInt128(0, j*1000 + i);
-                map.put(idValue, null);
-              }
-            }
-          }
+//          {
+//            HashMap<UInt128, Object> map = new HashMap<>();
+//
+//            for (int i = 0; i < 1000; i++) {
+//              for (int j = 0; j < 1000; j++) {
+//                UInt128 idValue = new UInt128(0, i*1000 + j);
+//                map.put(idValue, null);
+//              }
+//            }
+//          }
+//
+//          {
+//            HashMap<UInt128, Object> map = new HashMap<>();
+//
+//            for (int i = 0; i < 1000; i++) {
+//              for (int j = 0; j < 1000; j++) {
+//                UInt128 idValue = new UInt128(0, j*1000 + i);
+//                map.put(idValue, null);
+//              }
+//            }
+//          }
 
 
           long degree_prev = 0;
@@ -785,6 +787,8 @@ public class PerfUtil {
         }
 
         System.out.println("Completed warmup phase.");
+
+        Thread.sleep(5000);
 
         // Output the header
         // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
@@ -888,6 +892,241 @@ public class PerfUtil {
                                                 execTimes[(int)p99],
                                                 execTimes[(int)p999]));
             }
+
+            degree_prev = degree;
+          }
+        }
+
+        if (outfile != null)
+          outfile.close();
+      } else if ((Boolean) opts.get("traverse_one_neighbor")) {
+        Graph graph = new Graph(config);
+
+        long warmup_nodes_start = Long.decode(config.get("traverse_one_neighbor.warmup.nodes.start"));
+        long warmup_nodes_end = Long.decode(config.get("traverse_one_neighbor.warmup.nodes.end"));
+        long warmup_nodes_points = Long.decode(config.get("traverse_one_neighbor.warmup.nodes.points"));
+        String warmup_nodes_mode = config.get("traverse_one_neighbor.warmup.nodes.mode");
+
+        long warmup_degree_start = Long.decode(config.get("traverse_one_neighbor.warmup.degree.start"));
+        long warmup_degree_end = Long.decode(config.get("traverse_one_neighbor.warmup.degree.end"));
+        long warmup_degree_points = Long.decode(config.get("traverse_one_neighbor.warmup.degree.points"));
+        String warmup_degree_mode = config.get("traverse_one_neighbor.warmup.degree.mode");
+
+        long warmup_samples = Long.decode(config.get("traverse_one_neighbor.warmup.samples"));
+
+        long warmup_maxtime = Long.decode(config.get("traverse_one_neighbor.warmup.maxtime"));
+       
+        long nodes_start = Long.decode(config.get("traverse_one_neighbor.nodes.start"));
+        long nodes_end = Long.decode(config.get("traverse_one_neighbor.nodes.end"));
+        long nodes_points = Long.decode(config.get("traverse_one_neighbor.nodes.points"));
+        String nodes_mode = config.get("traverse_one_neighbor.nodes.mode");
+
+        long degree_start = Long.decode(config.get("traverse_one_neighbor.degree.start"));
+        long degree_end = Long.decode(config.get("traverse_one_neighbor.degree.end"));
+        long degree_points = Long.decode(config.get("traverse_one_neighbor.degree.points"));
+        String degree_mode = config.get("traverse_one_neighbor.degree.mode");
+
+        long samples = Long.decode(config.get("traverse_one_neighbor.samples"));
+       
+        FileWriter outfile = null;
+        if (opts.get("--output") !=  null) {
+          try {
+            outfile = new FileWriter((String)opts.get("--output"));
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+
+        List<Long> warmup_nodes_params = range(warmup_nodes_start, warmup_nodes_end, 
+            warmup_nodes_points, warmup_nodes_mode);
+        List<Long> warmup_degree_params = range(warmup_degree_start, warmup_degree_end, 
+            warmup_degree_points, warmup_degree_mode);
+
+        List<Long> nodes_params = range(nodes_start, nodes_end, nodes_points, nodes_mode);
+        List<Long> degree_params = range(degree_start, degree_end, degree_points, degree_mode);
+
+        // WarmUp
+        // Perform the experiment with a sample size of 1
+        long warmupStartTime = System.currentTimeMillis();
+        System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
+        {
+          String edgeLabel = "knows";
+          Direction direction = Direction.OUT;
+          Vertex baseVertex = new Vertex(new UInt128(1,0), "Warmup");
+          Vertex neigVertex = new Vertex(new UInt128(1,0), "Warmup");
+          byte[] keyPrefix = GraphHelper.getEdgeListKeyPrefix(baseVertex.id(), edgeLabel, direction,
+                  neigVertex.label());
+
+          int numElements = 10000;
+          for (int j = 0; j < numElements; j++) {
+            EdgeList.prepend(null, graph.getClient(), graph.getEdgeListTableId(), keyPrefix, 
+                neigVertex.id(), new byte[0], 1024, 0);
+          }
+
+          for (int j = 0; j < 10000; j++) {
+            EdgeList.batchReadSingleThreaded(null, graph.getClient(), graph.getEdgeListTableId(),
+                Collections.singleton(baseVertex), edgeLabel, direction, false, "Warmup");
+          }
+
+          long degree_prev = 0;
+          for (long degree : warmup_degree_params) {
+            // Experiment setup: For each degree we setup all the nodes to have that degree. Each time
+            // degree is increased, we add the additional edges needed to the existing nodes to bring
+            // the degree up to the specified amount.
+            for (long i = 0; i < warmup_nodes_end; i++) {
+              Vertex startNode = new Vertex(new UInt128(1,i), "Person");
+              for (long j = degree_prev; j < degree; j++) {
+                // Vertices need labels, need to create vertex objects
+                graph.addEdge(startNode, 
+                              "knows", 
+                              new Vertex(new UInt128(1, 0), 
+                                "Person"), 
+                              null);
+              }
+            }
+
+            long nodes_prev = 0;
+            Set<Vertex> startNodeSet = new HashSet<>();
+            for (long nodes : warmup_nodes_params) {
+              for (long i = nodes_prev; i < nodes; i++)
+                startNodeSet.add(new Vertex(new UInt128(1,i), "Person"));
+
+              for (long i = 0; i < warmup_samples; i++) {
+                TraversalResult result = graph.traverse(startNodeSet, 
+                                                        "knows", 
+                                                        Direction.OUT, 
+                                                        false, 
+                                                        "Person");
+              }
+
+              if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= warmup_maxtime)
+                break;
+
+              nodes_prev = nodes;
+            }
+
+            if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= warmup_maxtime)
+              break;
+
+            degree_prev = degree;
+          }
+        }
+
+        System.out.println(String.format(
+              "Warmup phase complete. Total time: %d seconds",
+              (System.currentTimeMillis() - warmupStartTime)/1000));
+
+        // Output the header
+        // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+        if (outfile == null)
+          System.out.println(
+              "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th");
+        else
+          outfile.append(
+              "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
+
+        long degree_prev = 0;
+        for (long degree : degree_params) {
+          // Experiment setup: For each degree we setup all the nodes to have that degree. Each time
+          // degree is increased, we add the additional edges needed to the existing nodes to bring
+          // the degree up to the specified amount.
+          for (long i = 0; i < nodes_end; i++) {
+            Vertex startNode = new Vertex(new UInt128(0,i), "Person");
+            for (long j = degree_prev; j < degree; j++) {
+              // Vertices need labels, need to create vertex objects
+              graph.addEdge(startNode, 
+                            "knows", 
+                            new Vertex(new UInt128(0, 0), "Person"), 
+                            null);
+            }
+          }
+
+          long nodes_prev = 0;
+          Set<Vertex> startNodeSet = new HashSet<>();
+          for (long nodes : nodes_params) {
+            for (long i = nodes_prev; i < nodes; i++)
+              startNodeSet.add(new Vertex(new UInt128(0,i), "Person"));
+
+            // Execution times are recorded in nanoseconds.
+            Long[] execTimes = new Long[(int)samples];
+            long numNeighbors = 0;
+            for (long i = 0; i < samples; i++) {
+              long startTime = System.nanoTime();
+              TraversalResult result = graph.traverse(startNodeSet, 
+                                                      "knows", 
+                                                      Direction.OUT, 
+                                                      false, 
+                                                      "Person");
+              long endTime = System.nanoTime();
+              execTimes[(int)i] = endTime - startTime;
+              numNeighbors = result.vSet.size();
+            }
+
+            // Calculate latency statistics
+            Arrays.sort(execTimes);
+
+            long sum = 0;
+            long min = Long.MAX_VALUE;
+            long max = 0;
+            for (int k = 0; k < execTimes.length; k++) {
+              sum += execTimes[k];
+
+              if (execTimes[k] < min)
+                min = execTimes[k];
+
+              if (execTimes[k] > max)
+                max = execTimes[k];
+            }
+
+            long mean = sum / execTimes.length;
+
+            long p25  = (int) (0.250 * (float) execTimes.length);
+            long p50  = (int) (0.500 * (float) execTimes.length);
+            long p75  = (int) (0.750 * (float) execTimes.length);
+            long p90  = (int) (0.900 * (float) execTimes.length);
+            long p95  = (int) (0.950 * (float) execTimes.length);
+            long p99  = (int) (0.990 * (float) execTimes.length);
+            long p999 = (int) (0.999 * (float) execTimes.length);
+
+            // Print out the results (in microseconds)
+            // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+            if (outfile == null)
+              System.out.println(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d", 
+                                                degree,
+                                                nodes,
+                                                min/1000,
+                                                mean/1000,
+                                                max/1000,
+                                                samples,
+                                                execTimes[(int)p50]/1000,
+                                                execTimes[(int)p90]/1000,
+                                                execTimes[(int)p95]/1000,
+                                                execTimes[(int)p99]/1000,
+                                                execTimes[(int)p999]/1000));
+            else {
+              System.out.println(String.format(
+                    "\t{Degree: %d, Nodes: %d, Nbrs: %d, Time: %d, EPS: %01.2f}",
+                    degree,
+                    nodes,
+                    numNeighbors,
+                    min/1000,
+                    1000.0 * (double)(degree * nodes) / (double)min));
+
+              outfile.append(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n", 
+                                                degree,
+                                                nodes,
+                                                min/1000,
+                                                mean/1000,
+                                                max/1000,
+                                                samples,
+                                                execTimes[(int)p50]/1000,
+                                                execTimes[(int)p90]/1000,
+                                                execTimes[(int)p95]/1000,
+                                                execTimes[(int)p99]/1000,
+                                                execTimes[(int)p999]/1000));
+            }
+              
+            nodes_prev = nodes;
           }
 
           degree_prev = degree;
@@ -895,6 +1134,9 @@ public class PerfUtil {
 
         if (outfile != null)
           outfile.close();
+
+        graph.delete();
+        graph.close();
       }
     }
   }
