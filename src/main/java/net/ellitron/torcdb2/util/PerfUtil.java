@@ -65,6 +65,9 @@ public class PerfUtil {
       + "\n"
       + "Usage:\n"
       + "  PerfUtil [options] edge_rdwr\n"
+      + "  PerfUtil [options] addVertex\n"
+      + "  PerfUtil [options] addEdge\n"
+      + "  PerfUtil [options] getProperties\n"
       + "  PerfUtil [options] traverse_unique_neighbors\n"
       + "  PerfUtil [options] traverse_one_neighbor\n"
       + "  PerfUtil [options] hashmapuint128keys\n"
@@ -265,6 +268,302 @@ public class PerfUtil {
                 writeLatency[(int) (0.50 * (float) writeLatency.length)]/1000, 
                 readLatency[(int) (0.50 * (float) readLatency.length)]/1000));
         }
+      } else if ((Boolean) opts.get("addVertex")) {
+        Graph graph = new Graph(config);
+       
+        long props_start = Long.decode(config.get("addvertex.props.start"));
+        long props_end = Long.decode(config.get("addvertex.props.end"));
+        long props_points = Long.decode(config.get("addvertex.props.points"));
+        String props_mode = config.get("addvertex.props.mode");
+
+        long samples = Long.decode(config.get("addvertex.samples"));
+       
+        FileWriter outfile = null;
+        if (opts.get("--output") !=  null) {
+          try {
+            outfile = new FileWriter((String)opts.get("--output"));
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+
+        List<Long> props_params = range(props_start, props_end, props_points, props_mode);
+
+        // WarmUp
+        long warmupStartTime = System.currentTimeMillis();
+        System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
+        {
+          Vertex v = new Vertex(new UInt128(1, 0), "Person");
+          Map<Object, Object> props = new HashMap<>();
+          for (long i = 0; i < 10; i++) {
+            String str = String.format("%010d", i);
+            props.add(str, str);
+          }
+
+          // Execution times are recorded in nanoseconds.
+          Long[] execTimes = new Long[(int)samples];
+          for (long i = 0; i < samples; i++) {
+            long startTime = System.nanoTime();
+            graph.beginTx();
+            graph.addVertex(v, props);
+            graph.commitAndSyncTx();
+            long endTime = System.nanoTime();
+            execTimes[(int)i] = endTime - startTime;
+          }
+        }
+
+        System.out.println(String.format(
+              "Warmup phase complete. Total time: %d seconds",
+              (System.currentTimeMillis() - warmupStartTime)/1000));
+
+        // Output the header
+        // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+        if (outfile == null)
+          System.out.println(
+              "props, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th");
+        else {
+          outfile.append(
+              "props, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
+          outfile.flush();
+        }
+
+        for (long numProps : props_params) {
+          Vertex v = new Vertex(new UInt128(0, 0), "Person");
+          Map<Object, Object> props = new HashMap<>();
+          for (long i = 0; i < numProps; i++) {
+            String str = String.format("%010d", i);
+            props.add(str, str);
+          }
+
+          // Execution times are recorded in nanoseconds.
+          Long[] execTimes = new Long[(int)samples];
+          for (long i = 0; i < samples; i++) {
+            long startTime = System.nanoTime();
+            graph.beginTx();
+            graph.addVertex(v, props);
+            graph.commitAndSyncTx();
+            long endTime = System.nanoTime();
+            execTimes[(int)i] = endTime - startTime;
+          }
+
+          // Calculate latency statistics
+          Arrays.sort(execTimes);
+
+          long sum = 0;
+          long min = Long.MAX_VALUE;
+          long max = 0;
+          for (int k = 0; k < execTimes.length; k++) {
+            sum += execTimes[k];
+
+            if (execTimes[k] < min)
+              min = execTimes[k];
+
+            if (execTimes[k] > max)
+              max = execTimes[k];
+          }
+
+          long mean = sum / execTimes.length;
+
+          long p25  = (int) (0.250 * (float) execTimes.length);
+          long p50  = (int) (0.500 * (float) execTimes.length);
+          long p75  = (int) (0.750 * (float) execTimes.length);
+          long p90  = (int) (0.900 * (float) execTimes.length);
+          long p95  = (int) (0.950 * (float) execTimes.length);
+          long p99  = (int) (0.990 * (float) execTimes.length);
+          long p999 = (int) (0.999 * (float) execTimes.length);
+
+          // Print out the results (in microseconds)
+          // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+          if (outfile == null)
+            System.out.println(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d", 
+                                              numProps,
+                                              min/1000,
+                                              mean/1000,
+                                              max/1000,
+                                              samples,
+                                              execTimes[(int)p50]/1000,
+                                              execTimes[(int)p90]/1000,
+                                              execTimes[(int)p95]/1000,
+                                              execTimes[(int)p99]/1000,
+                                              execTimes[(int)p999]/1000));
+          else {
+            System.out.println(String.format(
+                  "\t{NumProps: %d, Time: %d}",
+                  numProps,
+                  min/1000));
+
+            outfile.append(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n", 
+                                          numProps,
+                                          min/1000,
+                                          mean/1000,
+                                          max/1000,
+                                          samples,
+                                          execTimes[(int)p50]/1000,
+                                          execTimes[(int)p90]/1000,
+                                          execTimes[(int)p95]/1000,
+                                          execTimes[(int)p99]/1000,
+                                          execTimes[(int)p999]/1000));
+            outfile.flush();
+          }
+        }
+
+        if (outfile != null)
+          outfile.close();
+
+        graph.delete();
+        graph.close();
+      } else if ((Boolean) opts.get("addEdge")) {
+        Graph graph = new Graph(config);
+       
+        long props_start = Long.decode(config.get("addedge.props.start"));
+        long props_end = Long.decode(config.get("addedge.props.end"));
+        long props_points = Long.decode(config.get("addedge.props.points"));
+        String props_mode = config.get("addedge.props.mode");
+
+        long edges_start = Long.decode(config.get("addedge.edges.start"));
+        long edges_end = Long.decode(config.get("addedge.edges.end"));
+        long edges_points = Long.decode(config.get("addedge.edges.points"));
+        String edges_mode = config.get("addedge.edges.mode");
+
+        long samples = Long.decode(config.get("addedge.samples"));
+       
+        FileWriter outfile = null;
+        if (opts.get("--output") !=  null) {
+          try {
+            outfile = new FileWriter((String)opts.get("--output"));
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+
+        List<Long> props_params = range(props_start, props_end, props_points, props_mode);
+        List<Long> edges_params = range(edges_start, edges_end, edges_points, edges_mode);
+
+        // WarmUp
+        long warmupStartTime = System.currentTimeMillis();
+        System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
+        {
+          Vertex v1 = new Vertex(new UInt128(1, 0), "Person");
+          Vertex v2 = new Vertex(new UInt128(1, 1), "Person");
+          
+          Map<Object, Object> props = new HashMap<>();
+          for (long i = 0; i < 10; i++) {
+            String str = String.format("%010d", i);
+            props.add(str, str);
+          }
+
+          Long[] execTimes = new Long[(int)samples];
+          for (long j = 0; j < 100; j++) {
+            long startTime = System.nanoTime();
+            graph.beginTx();
+            graph.addEdge(v1, v2, props);
+            graph.commitAndSyncTx();
+            long endTime = System.nanoTime();
+            execTimes[(int)i] = endTime - startTime;
+          }
+        }
+
+        System.out.println(String.format(
+              "Warmup phase complete. Total time: %d seconds",
+              (System.currentTimeMillis() - warmupStartTime)/1000));
+
+        // Output the header
+        // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+        if (outfile == null)
+          System.out.println(
+              "props, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th");
+        else {
+          outfile.append(
+              "props, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
+          outfile.flush();
+        }
+
+        for (long numProps : props_params) {
+          Vertex v = new Vertex(new UInt128(0, 0), "Person");
+          Map<Object, Object> props = new HashMap<>();
+          for (long i = 0; i < numProps; i++) {
+            String str = String.format("%010d", i);
+            props.add(str, str);
+          }
+
+          // Execution times are recorded in nanoseconds.
+          Long[] execTimes = new Long[(int)samples];
+          for (long i = 0; i < samples; i++) {
+            long startTime = System.nanoTime();
+            graph.beginTx();
+            graph.addVertex(v, props);
+            graph.commitAndSyncTx();
+            long endTime = System.nanoTime();
+            execTimes[(int)i] = endTime - startTime;
+          }
+
+          // Calculate latency statistics
+          Arrays.sort(execTimes);
+
+          long sum = 0;
+          long min = Long.MAX_VALUE;
+          long max = 0;
+          for (int k = 0; k < execTimes.length; k++) {
+            sum += execTimes[k];
+
+            if (execTimes[k] < min)
+              min = execTimes[k];
+
+            if (execTimes[k] > max)
+              max = execTimes[k];
+          }
+
+          long mean = sum / execTimes.length;
+
+          long p25  = (int) (0.250 * (float) execTimes.length);
+          long p50  = (int) (0.500 * (float) execTimes.length);
+          long p75  = (int) (0.750 * (float) execTimes.length);
+          long p90  = (int) (0.900 * (float) execTimes.length);
+          long p95  = (int) (0.950 * (float) execTimes.length);
+          long p99  = (int) (0.990 * (float) execTimes.length);
+          long p999 = (int) (0.999 * (float) execTimes.length);
+
+          // Print out the results (in microseconds)
+          // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+          if (outfile == null)
+            System.out.println(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d", 
+                                              numProps,
+                                              min/1000,
+                                              mean/1000,
+                                              max/1000,
+                                              samples,
+                                              execTimes[(int)p50]/1000,
+                                              execTimes[(int)p90]/1000,
+                                              execTimes[(int)p95]/1000,
+                                              execTimes[(int)p99]/1000,
+                                              execTimes[(int)p999]/1000));
+          else {
+            System.out.println(String.format(
+                  "\t{NumProps: %d, Time: %d}",
+                  numProps,
+                  min/1000));
+
+            outfile.append(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n", 
+                                          numProps,
+                                          min/1000,
+                                          mean/1000,
+                                          max/1000,
+                                          samples,
+                                          execTimes[(int)p50]/1000,
+                                          execTimes[(int)p90]/1000,
+                                          execTimes[(int)p95]/1000,
+                                          execTimes[(int)p99]/1000,
+                                          execTimes[(int)p999]/1000));
+            outfile.flush();
+          }
+        }
+
+        if (outfile != null)
+          outfile.close();
+
+        graph.delete();
+        graph.close();
+      } else if ((Boolean) opts.get("getProperties")) {
       } else if ((Boolean) opts.get("traverse_unique_neighbors")) {
         Graph graph = new Graph(config);
 
@@ -312,7 +611,6 @@ public class PerfUtil {
         List<Long> degree_params = range(degree_start, degree_end, degree_points, degree_mode);
 
         // WarmUp
-        // Perform the experiment with a sample size of 1
         long warmupStartTime = System.currentTimeMillis();
         System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
         {
@@ -389,9 +687,11 @@ public class PerfUtil {
         if (outfile == null)
           System.out.println(
               "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th");
-        else
+        else {
           outfile.append(
               "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
+          outfile.flush();
+        }
 
         long degree_prev = 0;
 //        long neighborIdCounter = 0;
@@ -495,6 +795,7 @@ public class PerfUtil {
                                                 execTimes[(int)p95]/1000,
                                                 execTimes[(int)p99]/1000,
                                                 execTimes[(int)p999]/1000));
+              outfile.flush();
             }
               
             nodes_prev = nodes;
@@ -795,9 +1096,11 @@ public class PerfUtil {
         if (outfile == null)
           System.out.println(
               "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th");
-        else
+        else {
           outfile.append(
               "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
+          outfile.flush();
+        }
 
         long degree_prev = 0;
         Random random = new Random(0);
@@ -891,6 +1194,7 @@ public class PerfUtil {
                                                 execTimes[(int)p95],
                                                 execTimes[(int)p99],
                                                 execTimes[(int)p999]));
+              outfile.flush();
             }
 
             degree_prev = degree;
@@ -946,7 +1250,6 @@ public class PerfUtil {
         List<Long> degree_params = range(degree_start, degree_end, degree_points, degree_mode);
 
         // WarmUp
-        // Perform the experiment with a sample size of 1
         long warmupStartTime = System.currentTimeMillis();
         System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
         {
@@ -1021,9 +1324,12 @@ public class PerfUtil {
         if (outfile == null)
           System.out.println(
               "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th");
-        else
+        else {
           outfile.append(
               "degree, nodes, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
+          outfile.flush();
+        }
+
 
         long degree_prev = 0;
         for (long degree : degree_params) {
@@ -1124,6 +1430,7 @@ public class PerfUtil {
                                                 execTimes[(int)p95]/1000,
                                                 execTimes[(int)p99]/1000,
                                                 execTimes[(int)p999]/1000));
+              outfile.flush();
             }
               
             nodes_prev = nodes;
