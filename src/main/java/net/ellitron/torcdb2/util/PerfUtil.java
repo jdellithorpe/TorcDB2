@@ -554,6 +554,164 @@ public class PerfUtil {
         graph.delete();
         graph.close();
       } else if ((Boolean) opts.get("getProperties")) {
+        Graph graph = new Graph(config);
+       
+        long props_start = Long.decode(config.get("addvertex.props.start"));
+        long props_end = Long.decode(config.get("addvertex.props.end"));
+        long props_points = Long.decode(config.get("addvertex.props.points"));
+        String props_mode = config.get("addvertex.props.mode");
+
+        long vertices_start = Long.decode(config.get("addvertex.vertices.start"));
+        long vertices_end = Long.decode(config.get("addvertex.vertices.end"));
+        long vertices_points = Long.decode(config.get("addvertex.vertices.points"));
+        String vertices_mode = config.get("addvertex.vertices.mode");
+
+        long warmup_maxtime = Long.decode(config.get("addvertex.warmup.maxtime"));
+
+        long samples = Long.decode(config.get("addvertex.samples"));
+       
+        FileWriter outfile = null;
+        if (opts.get("--output") !=  null) {
+          try {
+            outfile = new FileWriter((String)opts.get("--output"));
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+
+        List<Long> props_params = range(props_start, props_end, props_points, props_mode);
+        List<Long> vertices_params = range(vertices_start, vertices_end, vertices_points, vertices_mode);
+
+        // WarmUp
+        long warmupStartTime = System.currentTimeMillis();
+        System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
+        {
+          for (long numProps : props_params) {
+            for (long numVertices : vertices_params) {
+              if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= warmup_maxtime)
+                break;
+            }
+
+            if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= warmup_maxtime)
+              break;
+          }
+        }
+
+        System.out.println(String.format(
+              "Warmup phase complete. Total time: %d seconds",
+              (System.currentTimeMillis() - warmupStartTime)/1000));
+
+        // Output the header
+        // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+        if (outfile == null)
+          System.out.println(
+              "props, vertices, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th");
+        else {
+          outfile.append(
+              "props, vertices, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
+          outfile.flush();
+        }
+
+        for (long numProps : props_params) {
+          Map<Object, Object> props = new HashMap<>();
+          for (long i = 0; i < numProps; i++) {
+            String str = String.format("%010d", i);
+            props.put(str, str);
+          }
+
+          long numVertices_prev = 0;
+          Set<Vertex> vSet = new HashSet<>();
+          for (long numVertices : vertices_params) {
+            // Setup the vertices and properties
+            for (long i = numVertices_prev; i < numVertices; i++) {
+              Vertex v = new Vertex(new UInt128(0, i), "Person");
+              graph.addVertex(v, props);
+              vSet.add(v);
+            }
+
+
+            // Execution times are recorded in nanoseconds.
+            Long[] execTimes = new Long[(int)samples];
+            for (long i = 0; i < samples; i++) {
+              long startTime = System.nanoTime();
+              Map<Vertex, Map<Object, Object>> vPropMap = new HashMap<>();
+              graph.getProperties(vPropMap, vSet);
+              long endTime = System.nanoTime();
+              execTimes[(int)i] = endTime - startTime;
+            }
+
+            // Calculate latency statistics
+            Arrays.sort(execTimes);
+
+            long sum = 0;
+            long min = Long.MAX_VALUE;
+            long max = 0;
+            for (int k = 0; k < execTimes.length; k++) {
+              sum += execTimes[k];
+
+              if (execTimes[k] < min)
+                min = execTimes[k];
+
+              if (execTimes[k] > max)
+                max = execTimes[k];
+            }
+
+            long mean = sum / execTimes.length;
+
+            long p25  = (int) (0.250 * (float) execTimes.length);
+            long p50  = (int) (0.500 * (float) execTimes.length);
+            long p75  = (int) (0.750 * (float) execTimes.length);
+            long p90  = (int) (0.900 * (float) execTimes.length);
+            long p95  = (int) (0.950 * (float) execTimes.length);
+            long p99  = (int) (0.990 * (float) execTimes.length);
+            long p999 = (int) (0.999 * (float) execTimes.length);
+
+            // Print out the results (in microseconds)
+            // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+            if (outfile == null)
+              System.out.println(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d", 
+                                                numProps,
+                                                numVertices,
+                                                min/1000,
+                                                mean/1000,
+                                                max/1000,
+                                                samples,
+                                                execTimes[(int)p50]/1000,
+                                                execTimes[(int)p90]/1000,
+                                                execTimes[(int)p95]/1000,
+                                                execTimes[(int)p99]/1000,
+                                                execTimes[(int)p999]/1000));
+            else {
+              System.out.println(String.format(
+                    "\t{NumProps: %d, NumVertices: %d, Time: %d}",
+                    numProps,
+                    numVertices,
+                    min/1000));
+
+              outfile.append(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n", 
+                                            numProps,
+                                            numVertices,
+                                            min/1000,
+                                            mean/1000,
+                                            max/1000,
+                                            samples,
+                                            execTimes[(int)p50]/1000,
+                                            execTimes[(int)p90]/1000,
+                                            execTimes[(int)p95]/1000,
+                                            execTimes[(int)p99]/1000,
+                                            execTimes[(int)p999]/1000));
+              outfile.flush();
+            }
+
+            numVertices_prev = numVertices;
+          }
+        }
+
+        if (outfile != null)
+          outfile.close();
+
+        graph.delete();
+        graph.close();
       } else if ((Boolean) opts.get("traverse_unique_neighbors")) {
         Graph graph = new Graph(config);
 
