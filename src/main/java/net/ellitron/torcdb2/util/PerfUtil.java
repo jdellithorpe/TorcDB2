@@ -455,11 +455,6 @@ public class PerfUtil {
         long props_points = Long.decode(config.get("addedge.props.points"));
         String props_mode = config.get("addedge.props.mode");
 
-        long edges_start = Long.decode(config.get("addedge.edges.start"));
-        long edges_end = Long.decode(config.get("addedge.edges.end"));
-        long edges_points = Long.decode(config.get("addedge.edges.points"));
-        String edges_mode = config.get("addedge.edges.mode");
-
         long warmup_maxtime = Long.decode(config.get("addedge.warmup.maxtime"));
 
         long samples = Long.decode(config.get("addedge.samples"));
@@ -474,7 +469,6 @@ public class PerfUtil {
         }
 
         List<Long> props_params = range(props_start, props_end, props_points, props_mode);
-        List<Long> edges_params = range(edges_start, edges_end, edges_points, edges_mode);
 
         // WarmUp
         long warmupStartTime = System.currentTimeMillis();
@@ -508,90 +502,49 @@ public class PerfUtil {
         // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
         if (outfile == null)
           System.out.println(
-              "props, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th");
+              "props, edge, time");
         else {
           outfile.append(
-              "props, min, mean, max, samples, 50th, 90th, 95th, 99th, 99.9th\n");
+              "props, edge, time\n");
           outfile.flush();
         }
 
         for (long numProps : props_params) {
-          Vertex v = new Vertex(new UInt128(0, 0), "Person");
           Map<Object, Object> props = new HashMap<>();
           for (long i = 0; i < numProps; i++) {
             String str = String.format("%010d", i);
             props.put(str, str);
           }
 
+          long numEdges = 2048;
+          Vertex v1 = new Vertex(new UInt128(0, numProps), "Person");
+          Vertex v2 = new Vertex(new UInt128(0, 1), "Person");
           // Execution times are recorded in nanoseconds.
-          Long[] execTimes = new Long[(int)samples];
-          for (long i = 0; i < samples; i++) {
+          Long[] execTimes = new Long[(int)numEdges];
+          for (long i = 0; i < numEdges; i++) {
             long startTime = System.nanoTime();
             graph.beginTx();
-            graph.addVertex(v, props);
+            graph.addEdge(v1, "knows", v2, props);
             graph.commitAndSyncTx();
             long endTime = System.nanoTime();
             execTimes[(int)i] = endTime - startTime;
           }
 
-          // Calculate latency statistics
-          Arrays.sort(execTimes);
-
-          long sum = 0;
-          long min = Long.MAX_VALUE;
-          long max = 0;
-          for (int k = 0; k < execTimes.length; k++) {
-            sum += execTimes[k];
-
-            if (execTimes[k] < min)
-              min = execTimes[k];
-
-            if (execTimes[k] > max)
-              max = execTimes[k];
-          }
-
-          long mean = sum / execTimes.length;
-
-          long p25  = (int) (0.250 * (float) execTimes.length);
-          long p50  = (int) (0.500 * (float) execTimes.length);
-          long p75  = (int) (0.750 * (float) execTimes.length);
-          long p90  = (int) (0.900 * (float) execTimes.length);
-          long p95  = (int) (0.950 * (float) execTimes.length);
-          long p99  = (int) (0.990 * (float) execTimes.length);
-          long p999 = (int) (0.999 * (float) execTimes.length);
-
-          // Print out the results (in microseconds)
-          // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
-          if (outfile == null)
-            System.out.println(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d", 
-                                              numProps,
-                                              min/1000,
-                                              mean/1000,
-                                              max/1000,
-                                              samples,
-                                              execTimes[(int)p50]/1000,
-                                              execTimes[(int)p90]/1000,
-                                              execTimes[(int)p95]/1000,
-                                              execTimes[(int)p99]/1000,
-                                              execTimes[(int)p999]/1000));
-          else {
-            System.out.println(String.format(
-                  "\t{NumProps: %d, Time: %d}",
-                  numProps,
-                  min/1000));
-
-            outfile.append(String.format("%d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n", 
-                                          numProps,
-                                          min/1000,
-                                          mean/1000,
-                                          max/1000,
-                                          samples,
-                                          execTimes[(int)p50]/1000,
-                                          execTimes[(int)p90]/1000,
-                                          execTimes[(int)p95]/1000,
-                                          execTimes[(int)p99]/1000,
-                                          execTimes[(int)p999]/1000));
-            outfile.flush();
+          for (long i = 0; i < execTimes.length; i++) {
+            // Print out the results (in microseconds)
+            // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
+            if (outfile == null)
+              System.out.println(String.format("%d, %d, %d", 
+                                                numProps,
+                                                i,
+                                                execTimes[(int)i]/1000));
+            else {
+              outfile.append(String.format("%d, %d, %d\n", 
+                                            numProps,
+                                            i,
+                                            execTimes[(int)i]/1000));
+              outfile.flush();
+            }
           }
         }
 
