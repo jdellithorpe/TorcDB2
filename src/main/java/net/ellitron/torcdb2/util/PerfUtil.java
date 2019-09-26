@@ -455,9 +455,11 @@ public class PerfUtil {
         long props_points = Long.decode(config.get("addedge.props.points"));
         String props_mode = config.get("addedge.props.mode");
 
-        long warmup_maxtime = Long.decode(config.get("addedge.warmup.maxtime"));
+        long edges = Long.decode(config.get("addedge.edges"));
 
-        long samples = Long.decode(config.get("addedge.samples"));
+        long samples = Long.decode(config.get("addvertex.samples"));
+
+        long warmup_maxtime = Long.decode(config.get("addedge.warmup.maxtime"));
        
         FileWriter outfile = null;
         if (opts.get("--output") !=  null) {
@@ -474,23 +476,25 @@ public class PerfUtil {
         long warmupStartTime = System.currentTimeMillis();
         System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
         {
-          Vertex v1 = new Vertex(new UInt128(1, 0), "Person");
-          Vertex v2 = new Vertex(new UInt128(1, 1), "Person");
-          
-          Map<Object, Object> props = new HashMap<>();
-          for (long i = 0; i < 10; i++) {
-            String str = String.format("%010d", i);
-            props.put(str, str);
-          }
+          for (long numProps = 0; numProps < 16; numProps++) {
+            Map<Object, Object> props = new HashMap<>();
+            for (long i = 0; i < numProps; i++) {
+              String str = String.format("%010d", i);
+              props.put(str, str);
+            }
 
-          Long[] execTimes = new Long[(int)samples];
-          for (long i = 0; i < 100; i++) {
-            long startTime = System.nanoTime();
-            graph.beginTx();
-            graph.addEdge(v1, "knows", v2, props);
-            graph.commitAndSyncTx();
-            long endTime = System.nanoTime();
-            execTimes[(int)i] = endTime - startTime;
+            Vertex v1 = new Vertex(new UInt128(1, numProps), "Warmup");
+            Vertex v2 = new Vertex(new UInt128(1, 1), "Warmup");
+            // Execution times are recorded in nanoseconds.
+            Long[] execTimes = new Long[(int)edges];
+            for (long i = 0; i < edges; i++) {
+              long startTime = System.nanoTime();
+              graph.beginTx();
+              graph.addEdge(v1, "posts", v2, props);
+              graph.commitAndSyncTx();
+              long endTime = System.nanoTime();
+              execTimes[(int)i] = endTime - startTime;
+            }
           }
         }
 
@@ -516,36 +520,71 @@ public class PerfUtil {
             props.put(str, str);
           }
 
-          long numEdges = 2048;
-          Vertex v1 = new Vertex(new UInt128(0, numProps), "Person");
-          Vertex v2 = new Vertex(new UInt128(0, 1), "Person");
           // Execution times are recorded in nanoseconds.
-          Long[] execTimes = new Long[(int)numEdges];
-          for (long i = 0; i < numEdges; i++) {
-            long startTime = System.nanoTime();
-            graph.beginTx();
-            graph.addEdge(v1, "knows", v2, props);
-            graph.commitAndSyncTx();
-            long endTime = System.nanoTime();
-            execTimes[(int)i] = endTime - startTime;
+          Long[][] execTimes = new Long[(int)samples][(int)edges];
+          for (long j = 0; j < samples; j++) {
+            Vertex v1 = new Vertex(new UInt128(j, numProps), "Person");
+            Vertex v2 = new Vertex(new UInt128(j, 1), "Person");
+            for (long i = 0; i < edges; i++) {
+              long startTime = System.nanoTime();
+              graph.beginTx();
+              graph.addEdge(v1, "knows", v2, props);
+              graph.commitAndSyncTx();
+              long endTime = System.nanoTime();
+              execTimes[(int)j][(int)i] = endTime - startTime;
+            }
           }
 
-          for (long i = 0; i < execTimes.length; i++) {
+          for (long i = 0; i < edges; i++) {
+            Long[] sampleArray = new Long[(int)samples];
+            for (long j = 0; j < samples; j++)
+              sampleArray[(int)j] = execTimes[(int)j][(int)i];
+
+            Arrays.sort(sampleArray);
+
+            long sum = 0;
+            long min = Long.MAX_VALUE;
+            long max = 0;
+            for (int k = 0; k < sampleArray.length; k++) {
+              sum += sampleArray[k];
+
+              if (sampleArray[k] < min)
+                min = sampleArray[k];
+
+              if (sampleArray[k] > max)
+                max = sampleArray[k];
+            }
+
+            long mean = sum / sampleArray.length;
+
+            long p25  = (int) (0.250 * (float) sampleArray.length);
+            long p50  = (int) (0.500 * (float) sampleArray.length);
+            long p75  = (int) (0.750 * (float) sampleArray.length);
+            long p90  = (int) (0.900 * (float) sampleArray.length);
+            long p95  = (int) (0.950 * (float) sampleArray.length);
+            long p99  = (int) (0.990 * (float) sampleArray.length);
+            long p999 = (int) (0.999 * (float) sampleArray.length);
+
             // Print out the results (in microseconds)
             // degree, nodes, min, mean, max, 50th, 90th, 95th, 99th, 99.9th
             if (outfile == null)
               System.out.println(String.format("%d, %d, %d", 
                                                 numProps,
-                                                i,
-                                                execTimes[(int)i]/1000));
+                                                i+1,
+                                                sampleArray[(int)p50]/1000));
             else {
               outfile.append(String.format("%d, %d, %d\n", 
                                             numProps,
-                                            i,
-                                            execTimes[(int)i]/1000));
+                                            i+1,
+                                            sampleArray[(int)p50]/1000));
               outfile.flush();
             }
           }
+
+          if (outfile != null)
+            System.out.println(String.format(
+                  "\t{NumProps: %d}",
+                  numProps));
         }
 
         if (outfile != null)
