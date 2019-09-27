@@ -457,7 +457,7 @@ public class PerfUtil {
 
         long edges = Long.decode(config.get("addedge.edges"));
 
-        long samples = Long.decode(config.get("addvertex.samples"));
+        long samples = Long.decode(config.get("addedge.samples"));
 
         long warmup_maxtime = Long.decode(config.get("addedge.warmup.maxtime"));
        
@@ -476,26 +476,26 @@ public class PerfUtil {
         long warmupStartTime = System.currentTimeMillis();
         System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
         {
-          for (long numProps = 0; numProps < 16; numProps++) {
-            Map<Object, Object> props = new HashMap<>();
-            for (long i = 0; i < numProps; i++) {
-              String str = String.format("%010d", i);
-              props.put(str, str);
-            }
-
-            Vertex v1 = new Vertex(new UInt128(1, numProps), "Warmup");
-            Vertex v2 = new Vertex(new UInt128(1, 1), "Warmup");
-            // Execution times are recorded in nanoseconds.
-            Long[] execTimes = new Long[(int)edges];
-            for (long i = 0; i < edges; i++) {
-              long startTime = System.nanoTime();
-              graph.beginTx();
-              graph.addEdge(v1, "posts", v2, props);
-              graph.commitAndSyncTx();
-              long endTime = System.nanoTime();
-              execTimes[(int)i] = endTime - startTime;
-            }
-          }
+//          for (long numProps = 0; numProps < 16; numProps++) {
+//            Map<Object, Object> props = new HashMap<>();
+//            for (long i = 0; i < numProps; i++) {
+//              String str = String.format("%010d", i);
+//              props.put(str, str);
+//            }
+//
+//            Vertex v1 = new Vertex(new UInt128(1, numProps), "Warmup");
+//            Vertex v2 = new Vertex(new UInt128(1, 1), "Warmup");
+//            // Execution times are recorded in nanoseconds.
+//            Long[] execTimes = new Long[(int)edges];
+//            for (long i = 0; i < edges; i++) {
+//              long startTime = System.nanoTime();
+//              graph.beginTx();
+//              graph.addEdge(v1, "posts", v2, props);
+//              graph.commitAndSyncTx();
+//              long endTime = System.nanoTime();
+//              execTimes[(int)i] = endTime - startTime;
+//            }
+//          }
         }
 
         System.out.println(String.format(
@@ -532,7 +532,15 @@ public class PerfUtil {
               graph.commitAndSyncTx();
               long endTime = System.nanoTime();
               execTimes[(int)j][(int)i] = endTime - startTime;
+              TraversalResult result = graph.traverse(v1, "knows", Direction.OUT, false, "Person");
+              System.out.println(String.format("%d", result.vMap.get(v1).size()));
             }
+
+            if (outfile != null)
+              System.out.println(String.format(
+                    "\t{NumProps: %d, Sample: %d}",
+                    numProps,
+                    j));
           }
 
           for (long i = 0; i < edges; i++) {
