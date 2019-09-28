@@ -185,7 +185,7 @@ public class EdgeList {
         newList = true;
       }
 
-      System.out.println(String.format("Head Seg Size: %d", headSeg.capacity()));
+      //System.out.println(String.format("Head Seg Size: %d", headSeg.capacity()));
     } catch (ClientException e) {
       throw new RuntimeException(e);
     }
@@ -193,7 +193,7 @@ public class EdgeList {
     int serializedEdgeLength =
         UInt128.BYTES + Short.BYTES + serializedProperties.length;
       
-    System.out.println(String.format("Serialized Edge Length: %d", serializedEdgeLength));
+    //System.out.println(String.format("Serialized Edge Length: %d", serializedEdgeLength));
 
     ByteBuffer serializedEdge = ByteBuffer.allocate(serializedEdgeLength)
         .order(ByteOrder.LITTLE_ENDIAN);
@@ -287,8 +287,8 @@ public class EdgeList {
         ByteBuffer newTailSeg = ByteBuffer.allocate(prependedSeg.capacity() 
             - splitIndex).order(ByteOrder.LITTLE_ENDIAN);
 
-        System.out.println(String.format("New Head Segment: %d", newHeadSeg.capacity()));
-        System.out.println(String.format("New Tail Segment: %d", newTailSeg.capacity()));
+        //System.out.println(String.format("New Head Segment: %d", newHeadSeg.capacity()));
+        //System.out.println(String.format("New Tail Segment: %d", newTailSeg.capacity()));
 
         int newNumTailSegments = currentNumTailSegments + 1;
 

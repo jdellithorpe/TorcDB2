@@ -476,26 +476,26 @@ public class PerfUtil {
         long warmupStartTime = System.currentTimeMillis();
         System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
         {
-//          for (long numProps = 0; numProps < 16; numProps++) {
-//            Map<Object, Object> props = new HashMap<>();
-//            for (long i = 0; i < numProps; i++) {
-//              String str = String.format("%010d", i);
-//              props.put(str, str);
-//            }
-//
-//            Vertex v1 = new Vertex(new UInt128(1, numProps), "Warmup");
-//            Vertex v2 = new Vertex(new UInt128(1, 1), "Warmup");
-//            // Execution times are recorded in nanoseconds.
-//            Long[] execTimes = new Long[(int)edges];
-//            for (long i = 0; i < edges; i++) {
-//              long startTime = System.nanoTime();
-//              graph.beginTx();
-//              graph.addEdge(v1, "posts", v2, props);
-//              graph.commitAndSyncTx();
-//              long endTime = System.nanoTime();
-//              execTimes[(int)i] = endTime - startTime;
-//            }
-//          }
+          for (long numProps = 0; numProps < 16; numProps++) {
+            Map<Object, Object> props = new HashMap<>();
+            for (long i = 0; i < numProps; i++) {
+              String str = String.format("%010d", i);
+              props.put(str, str);
+            }
+
+            Vertex v1 = new Vertex(new UInt128(1, numProps), "Warmup");
+            Vertex v2 = new Vertex(new UInt128(1, 1), "Warmup");
+            // Execution times are recorded in nanoseconds.
+            Long[] execTimes = new Long[(int)edges];
+            for (long i = 0; i < edges; i++) {
+              long startTime = System.nanoTime();
+              graph.beginTx();
+              graph.addEdge(v1, "posts", v2, props);
+              graph.commitAndSyncTx();
+              long endTime = System.nanoTime();
+              execTimes[(int)i] = endTime - startTime;
+            }
+          }
         }
 
         System.out.println(String.format(
@@ -524,7 +524,7 @@ public class PerfUtil {
           Long[][] execTimes = new Long[(int)samples][(int)edges];
           for (long j = 0; j < samples; j++) {
             Vertex v1 = new Vertex(new UInt128(j, numProps), "Person");
-            Vertex v2 = new Vertex(new UInt128(j, 1), "Person");
+            Vertex v2 = new Vertex(new UInt128(j, numProps), "Person");
             for (long i = 0; i < edges; i++) {
               long startTime = System.nanoTime();
               graph.beginTx();
@@ -532,8 +532,8 @@ public class PerfUtil {
               graph.commitAndSyncTx();
               long endTime = System.nanoTime();
               execTimes[(int)j][(int)i] = endTime - startTime;
-              TraversalResult result = graph.traverse(v1, "knows", Direction.OUT, false, "Person");
-              System.out.println(String.format("%d", result.vMap.get(v1).size()));
+              //TraversalResult result = graph.traverse(v1, "knows", Direction.OUT, false, "Person");
+              //System.out.println(String.format("%d", result.vMap.get(v1).size()));
             }
 
             if (outfile != null)
@@ -603,19 +603,19 @@ public class PerfUtil {
       } else if ((Boolean) opts.get("getProperties")) {
         Graph graph = new Graph(config);
        
-        long props_start = Long.decode(config.get("addvertex.props.start"));
-        long props_end = Long.decode(config.get("addvertex.props.end"));
-        long props_points = Long.decode(config.get("addvertex.props.points"));
-        String props_mode = config.get("addvertex.props.mode");
+        long props_start = Long.decode(config.get("getproperties.props.start"));
+        long props_end = Long.decode(config.get("getproperties.props.end"));
+        long props_points = Long.decode(config.get("getproperties.props.points"));
+        String props_mode = config.get("getproperties.props.mode");
 
-        long vertices_start = Long.decode(config.get("addvertex.vertices.start"));
-        long vertices_end = Long.decode(config.get("addvertex.vertices.end"));
-        long vertices_points = Long.decode(config.get("addvertex.vertices.points"));
-        String vertices_mode = config.get("addvertex.vertices.mode");
+        long vertices_start = Long.decode(config.get("getproperties.vertices.start"));
+        long vertices_end = Long.decode(config.get("getproperties.vertices.end"));
+        long vertices_points = Long.decode(config.get("getproperties.vertices.points"));
+        String vertices_mode = config.get("getproperties.vertices.mode");
 
-        long warmup_maxtime = Long.decode(config.get("addvertex.warmup.maxtime"));
+        long warmup_maxtime = Long.decode(config.get("getproperties.warmup.maxtime"));
 
-        long samples = Long.decode(config.get("addvertex.samples"));
+        long samples = Long.decode(config.get("getproperties.samples"));
        
         FileWriter outfile = null;
         if (opts.get("--output") !=  null) {
@@ -634,9 +634,36 @@ public class PerfUtil {
         System.out.println(String.format("Beginning warmup (max %d minutes)...", warmup_maxtime));
         {
           for (long numProps : props_params) {
+            Map<Object, Object> props = new HashMap<>();
+            for (long i = 0; i < numProps; i++) {
+              String str = String.format("%010d", i);
+              props.put(str, str);
+            }
+
+            long numVertices_prev = 0;
+            Set<Vertex> vSet = new HashSet<>();
             for (long numVertices : vertices_params) {
+              // Setup the vertices and properties
+              for (long i = numVertices_prev; i < numVertices; i++) {
+                Vertex v = new Vertex(new UInt128(1, i), "Person");
+                graph.addVertex(v, props);
+                vSet.add(v);
+              }
+
+              // Execution times are recorded in nanoseconds.
+              Long[] execTimes = new Long[(int)samples];
+              for (long i = 0; i < samples; i++) {
+                long startTime = System.nanoTime();
+                Map<Vertex, Map<Object, Object>> vPropMap = new HashMap<>();
+                graph.getProperties(vPropMap, vSet);
+                long endTime = System.nanoTime();
+                execTimes[(int)i] = endTime - startTime;
+              }
+
               if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= warmup_maxtime)
                 break;
+
+              numVertices_prev = numVertices;
             }
 
             if ((System.currentTimeMillis() - warmupStartTime)/(1000*60) >= warmup_maxtime)
@@ -675,7 +702,6 @@ public class PerfUtil {
               graph.addVertex(v, props);
               vSet.add(v);
             }
-
 
             // Execution times are recorded in nanoseconds.
             Long[] execTimes = new Long[(int)samples];
