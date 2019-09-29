@@ -654,8 +654,10 @@ public class PerfUtil {
               Long[] execTimes = new Long[(int)samples];
               for (long i = 0; i < samples; i++) {
                 long startTime = System.nanoTime();
+                graph.beginTx();
                 Map<Vertex, Map<Object, Object>> vPropMap = new HashMap<>();
                 graph.getProperties(vPropMap, vSet);
+                graph.commitAndSyncTx();
                 long endTime = System.nanoTime();
                 execTimes[(int)i] = endTime - startTime;
               }
@@ -707,8 +709,10 @@ public class PerfUtil {
             Long[] execTimes = new Long[(int)samples];
             for (long i = 0; i < samples; i++) {
               long startTime = System.nanoTime();
+              graph.beginTx();
               Map<Vertex, Map<Object, Object>> vPropMap = new HashMap<>();
               graph.getProperties(vPropMap, vSet);
+              graph.commitAndSyncTx();
               long endTime = System.nanoTime();
               execTimes[(int)i] = endTime - startTime;
             }

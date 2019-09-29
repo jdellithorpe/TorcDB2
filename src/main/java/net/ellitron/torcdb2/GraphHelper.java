@@ -241,7 +241,13 @@ public class GraphHelper {
       case MAP:
         short entries = (short)(((value[offset+1] & 0xFF) << 0) | 
                                 ((value[offset+2] & 0xFF) << 8));
-        Map<Object, Object> map = new ArrayMap<>(entries);
+        
+        Map<Object, Object> map;
+        if (entries == 1)
+          map = new ArrayMap<>(entries);
+        else
+          map = new HashMap<>(entries);
+
         subOffset = offset + 3;
         for (int i = 0; i < entries; i++) {
           Object key = deserializeObject(value, subOffset, pinfo);
@@ -281,7 +287,13 @@ public class GraphHelper {
         return list;
       case MAP:
         short entries = buffer.getShort();
-        Map<Object, Object> map = new ArrayMap<>(entries);
+
+        Map<Object, Object> map;
+        if (entries == 1)
+          map = new ArrayMap<>(entries);
+        else
+          map = new HashMap<>(entries);
+
         for (int i = 0; i < entries; i++) {
           Object key = deserializeObject(buffer);
           Object val = deserializeObject(buffer);
